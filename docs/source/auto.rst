@@ -1,7 +1,7 @@
 Automatic Multivariate Polynomial Fit
 =====================================
 
-.. currentmodule:: polyFits
+.. automodule:: polyFits
 .. autofunction:: autoPolyFit
 
 

@@ -906,20 +906,16 @@ def autoPolyFit(X, y, MaxOrder=12, tol=1.e-12, sigma=None, sigmaMultiplier=1., v
     
     Parameters
     ----------
-    
-    X : numpy array
-    
+    X = numpy array
         Array of shape (N,m). X consists of all the independent variables in
         the dataset. N is the number of data points in the set and m is the
         number of independent variables
     
     y : list or numpy array
-    
         Array with length N. y is the dependent variable values
         cooresponding to the independent variables in X
     
     MaxOrder : integer, optional
-    
         Gives the max order of polynomial for any one of the independent
         varialbes to try. Defaults to 12
     
@@ -944,7 +940,6 @@ def autoPolyFit(X, y, MaxOrder=12, tol=1.e-12, sigma=None, sigmaMultiplier=1., v
     
     Returns
     -------
-    
     list
         A list of the polynomial coefficients.
     
