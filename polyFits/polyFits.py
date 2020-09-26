@@ -900,13 +900,19 @@ def isClose(x, y, tol=1.e-12):
 def autoPolyFit(X, y, MaxOrder=12, tol=1.e-12, sigma=None, sigmaMultiplier=1., verbose=True):
     '''Automatic Multivariable Polynomial Curve Fit
     
-    Performs a multivariate polynomial curve fit to a dataset and automatically determines which polynomial terms to use based on a balance between the goodness of the fit and a predictve capabilities measure that attempts to make the model compact.
+    Performs a multivariate polynomial curve fit to a dataset and
+    automatically determines which polynomial terms to use based on a
+    balance between the goodness of the fit and a predictve capabilities
+    measure that attempts to make the model compact.
     
-    Based on the method given by: Morelli, E. A., "Global Nonlinear Aerodynamic Modeling using Multivariate Orthogonal Functions," Journal of Aircraft, Vol. 32, Issue 2, 1995, pp. 270-277, https://arc.aiaa.org/doi/abs/10.2514/3.4
+    Based on the method given by: Morelli, E. A., "Global Nonlinear
+    Aerodynamic Modeling using Multivariate Orthogonal Functions," Journal
+    of Aircraft, Vol. 32, Issue 2, 1995, pp. 270-277,
+    https://arc.aiaa.org/doi/abs/10.2514/3.4
     
     Parameters
     ----------
-    X = numpy array
+    X : numpy array
         Array of shape (N,m). X consists of all the independent variables in
         the dataset. N is the number of data points in the set and m is the
         number of independent variables
