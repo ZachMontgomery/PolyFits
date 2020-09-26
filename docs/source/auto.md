@@ -1,2 +1,0 @@
-# Automatic Multivariate Polynomial Fit
-
