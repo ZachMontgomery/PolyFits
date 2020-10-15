@@ -27,7 +27,7 @@ You can either download the source as a ZIP file and extract the contents, or cl
 
     $ git clone https://github.com/ZachMontgomery/PolyFits.git
 
-I recommend cloning from the repository, as this will allow you to most easily download and install periodic updates. This can be done using the following command
+I recommend cloning from the repository, as this will allow you to most easily download and install periodic updates. This can be done by navigating to the root (polyFits/) directory and using the following command
 
     $ git pull
 
