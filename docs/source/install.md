@@ -12,7 +12,7 @@ If you do not have Python installed on your machine, it can be downloaded from [
 
 You can either download the source as a ZIP file and extract the contents, or clone the PolyFits repository using Git. If your system does not already have a version of Git installed, you will not be able to use this second option unless you first download and install Git. If you are unsure, you can check by typing `git --version` into a command prompt.
 
-### Downloading source as a ZIP file (Not recommended)
+#### Downloading source as a ZIP file (Not recommended)
 
 1. Open a web browser and navigate to [https://github.com/ZachMontgomery/PolyFits](https://github.com/ZachMontgomery/PolyFits)
 2. Make sure the Branch is set to `master`
@@ -20,10 +20,10 @@ You can either download the source as a ZIP file and extract the contents, or cl
 4. Select `Download ZIP`
 5. Extract the downloaded ZIP file to a local directory on your machine
 
-### Cloning the Github repository (Recommended)
+#### Cloning the Github repository (Recommended)
 
 1. From the command prompt navigate to the directory where PolyFits will be installed. Note: git will automatically create a folder within this directory called polyFits. Keep this in mind if you do not want multiple nested folders called polyFits.
-2. Execute
+2. Execute the following command
 
     $ git clone https://github.com/ZachMontgomery/PolyFits.git
 
