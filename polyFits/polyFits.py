@@ -199,7 +199,6 @@ def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[]
         The coefficient of determination, also referred to as the R^2 value.
         A value of 1 means the polynomial fits the data perfectly.
     """
-    
     ## copy raw data into new arrays
     x = np.copy(x)
     y = np.copy(y)
@@ -215,7 +214,7 @@ def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[]
     ## check for inconsistencies in dimensions from input variables
     if len(x.shape) == 1:
         x = np.transpose([x])
-    if x.shape[1] != V: raise ValueError('Dimensions for V don\'t match between n_vec and x. Lenght of n_vec and number of columns of x should equal the number of independent variables used, V.')
+    if x.shape[1] != V: raise ValueError('Dimensions for V don\'t match between n_vec and x. Length of n_vec and number of columns of x should equal the number of independent variables used, V.')
     if x.shape[0] != k: raise ValueError('Number of rows between x and y don\'t agree! The number of rows should be the total number of points, k, of the dataset.')
     
     ## determine number of polynomial coefficients
@@ -378,6 +377,8 @@ def multivariablePolynomialFunction(a, Nvec, x):
         Value of the multivariable polynomial function for the given
         independent variables
     """
+    if type(Nvec) not in (tuple, list, np.ndarray): Nvec = [Nvec]
+    if type(x) not in (tuple, list, np.ndarray): x = [x]
     # initialize summation to 0
     f = 0.
     # calculate total number of datapoints
