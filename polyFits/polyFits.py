@@ -343,6 +343,8 @@ def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[]
         if not i in active:
             a = np.insert(a,i,0.)
             active = np.insert(active,i,0)
+    
+    a = list(a)
     #calculate R^2 value
     ########################################################################
     if calcR2:
