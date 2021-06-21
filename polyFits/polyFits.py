@@ -100,7 +100,7 @@ import numpy as np
 from datetime import datetime as dt
 from datetime import timedelta as td
 
-def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[], sym_diff=[], zeroConstraints=[], constraints=[], percent=False, weighting=None, calcR2=True, verbose=True):
+def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[], sym_diff=[], zeroConstraints=[], constraints=[], percent=False, weighting=None, calcR2=True, verbose=True, calcSyx=True):
     """Performs the multivariable polynomial fit using Least Squares Regression.
     
     Parameters
@@ -347,9 +347,12 @@ def multivariablePolynomialFit(Nvec, x, y ,interaction=True, sym=[], sym_same=[]
     a = list(a)
     #calculate R^2 value
     ########################################################################
-    if calcR2:
-        r = multivariableR2(a, Nvec, x, y, verbose=verbose)
-        return a, r
+    if calcR2 or calcSyx:
+        r, syx = multivariableR2(a, Nvec, x, y, verbose=verbose, returnSyx=True, Jtilde=lenActive)
+        if calcR2 and calcSyx: return a, r, syx
+        if calcR2: return a, r
+        if calcSyx: return a, syx
+    
     return a
 
 def multivariablePolynomialFunction(a, Nvec, x):
@@ -402,7 +405,7 @@ def multivariablePolynomialFunction(a, Nvec, x):
     # return the finalized summation value
     return f
 
-def multivariableR2(a, Nvec, x, y, verbose=True):
+def multivariableR2(a, Nvec, x, y, verbose=True, returnSyx=False, Jtilde=None):
     """Calculates the R^2 value of a multivariable polynomial fit to a dataset
     
     Parameters
@@ -457,8 +460,16 @@ def multivariableR2(a, Nvec, x, y, verbose=True):
     f = np.copy(f)
     # calculate the SSr term
     SSr = sum( (ynew - f) ** 2. )
-    # calculate and return the R^2 value
-    return 1. - SSr / SSt
+    # calculate the R^2 value
+    r2 = 1. - SSr / SSt
+    #calculate Syx
+    if returnSyx:
+        if Jtilde == None:
+            Syx = np.sqrt(SSr / (k - calcJ(Nvec)))
+        else:
+            Syx = np.sqrt(SSr / (k - Jtilde))
+        return r2, Syx
+    return r2
 
 def multivariableRMS(raw_x, raw_y, a, Nvec, verbose=True):
     """Calculates the RMS and RMSN errors of a multivariable polynomial fit to a dataset.
@@ -1091,18 +1102,25 @@ def autoPolyFit(X, y, MaxOrder=12, tol=1.e-12, sigma=None, sigmaMultiplier=1., v
         JJ *= n+1
     
     a = [0.] * JJ
+    Jtilde = 0
     for j in range(JJ):
         n = decompose_j(j, nvec)
         for i in range(len(c)):
             if n == js[i]:
                 a[j] = c[i]
+                Jtilde += 1
     if verbose: prog.display()
     
-    return a, nvec, multivariableR2(a, nvec, X, y, verbose=verbose)
+    r2, syx = multivariableR2(a, nvec, X, y, returnSyx=True, Jtilde=Jtilde, verbose=verbose)
+    
+    return a, nvec, r2, syx
 
 
 def zachsAutoPolyFit(X, y, ranges, MaxOrder=12, tol=1.e-2, verbose=True):
     '''Under Construction'''
+    X = np.copy(X)
+    y = np.copy(y)
+    
     V = X.shape[1]
     nvec = [MaxOrder]*V
     Cons, cons = [], []
@@ -1110,7 +1128,7 @@ def zachsAutoPolyFit(X, y, ranges, MaxOrder=12, tol=1.e-2, verbose=True):
     while c == 1 or len(cons) > 0:
         c += 1
         
-        a = multivariablePolynomialFit(nvec, X, y, interaction=True, zeroConstraints=Cons, calcR2=False, verbose=verbose)
+        a = multivariablePolynomialFit(nvec, X, y, interaction=True, zeroConstraints=Cons, calcR2=False, calcSyx=False, verbose=verbose)
         cons = []
         J = calcJ(nvec)
         for j in range(J):
