@@ -1,5 +1,5 @@
-import ZachsModules as zm
 import numpy as np
+import ZachsModules as zm
 from multiprocessing import Pool, cpu_count
 
 class database():
