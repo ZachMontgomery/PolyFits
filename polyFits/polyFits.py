@@ -429,7 +429,10 @@ class polyFit():
         # calculate the R^2 value
         self.R2 = 1. - self.Sr / self.St
         
-        self.Syx = np.sqrt(self.Sr / (k - self.Jtilde))
+        if k - self.Jtilde != 0:
+            self.Syx = np.sqrt(self.Sr / (k - self.Jtilde))
+        else:
+            self.Syx = float('nan')
         
         avg = np.mean(abs(ynew))
         e = np.zeros(k)
