@@ -263,15 +263,14 @@ class polyFit():
                     if verbose: prog.display()
         else:
             
-            
-            
-            it = []
+            it = [None]*(k*lenActive)
+            cnt = -1
             ## loop thru data points
             for kk in range(k):
                 ## loop thru used polynomial coefficients
                 for jj,j in enumerate(active):
-                    it.append( (kk, jj, j) )
-            # itcopy = it[:]
+                    cnt += 1
+                    it[cnt] = (kk, jj, j)
             
             if self.mp == None:
                 cpus = cpu_count()
@@ -393,7 +392,7 @@ class polyFit():
         # calculate the SSt value
         self.St = float(sum( (ynew - self.ybar) ** 2. ))
         # initialize the f array
-        f = [None]*k
+        f = np.zeros(k)
         # loop through the datapoints
         if verbose: prog = zm.io.oneLineProgress(self.db.numPoints, msg='Evaluating Fit Parameters')
         
@@ -401,7 +400,6 @@ class polyFit():
             cnt = 0
             for i in range(self.db.numPoints):
                 if self.db.y[i] == None:
-                    if verbose: prog.display()
                     continue
                 ## calculate the f value from the polynomial function
                 f[cnt] = self.evaluate(self.db.x[i,:])
@@ -426,7 +424,6 @@ class polyFit():
                     f[i] = val
                     if verbose: prog.display()
         
-        f = np.copy(f)
         # calculate the SSr term
         self.Sr = float(sum( (ynew - f) ** 2. ))
         # calculate the R^2 value
