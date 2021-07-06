@@ -132,28 +132,28 @@ class polyFit():
                     that variable given in Nvec. Defaults to a list of False
                 
                 crossSymEven : list, optional
-                    list of tuples containing two integers. The two integers            double check this
+                    list of tuples containing two integers. The two integers
                     represent the independent variables that the even cross
                     symmetry is applied, which is an even symmetry that acts
                     along a diagonal among the two independent variables 
                     listed. The even cross symmetry forces all polynomial
                     terms between the two independent variables that have
-                    the same parity on the exponents, i.e. x1^3 * x2^5 both
-                    exponents are odd so the even cross symmetry would force
-                    the poly coefficient related to this term to 0. Defaults
-                    to an empty list
+                    different parity on the exponents, i.e. x1^4 * x2^5 have
+                    exponents that are odd and even, so the even cross
+                    symmetry would force the poly coefficient related to
+                    this term to 0. Defaults to an empty list
                 
                 crossSymOdd : list, optional
-                    list of tuples containing two integers. The two integers            double check this
+                    list of tuples containing two integers. The two integers
                     represent the independent variables that the odd cross
                     symmetry is applied, which is an odd symmetry that acts
                     along a diagonal among the two independent variables 
                     listed. The odd cross symmetry forces all polynomial
                     terms between the two independent variables that have
-                    different parity on the exponents, i.e. x1^4 * x2^5 have
-                    exponents are odd and even, so the odd cross symmetry
-                    would force the poly coefficient related to this term to
-                    0. Defaults to an empty list
+                    the same parity on the exponents, i.e. x1^2 * x2^4 both
+                    exponents are even so the odd cross symmetry would force
+                    the poly coefficient related to this term to 0. Defaults
+                    to an empty list
                 
                 zeroConstraints : list, optional
                     entries in the list are tuples of ints of length equal
@@ -232,7 +232,7 @@ class polyFit():
         self.db = db
         
         ## create array for polynomial values corresponding to the db values
-        self.f = np.zeros((self.db.numPoints, self.db.numDepVar))
+        self.f = np.zeros((self.db.numPoints, self.db.numDepVar)) * np.nan
         
         ## copy in fit arguments
         self.kw = kw[:]
@@ -252,7 +252,7 @@ class polyFit():
         self.coef    = [None] * self.db.numDepVar
         
         ## initialize other global goodness measurement variables
-        self.Jtilde  = np.array( [0]*self.db.numDepVar )
+        self.Jtilde  = np.zeros( self.db.numDepVar, dtype=int )
         self.R2      = np.zeros( self.db.numDepVar )
         self.RMS     = np.zeros( self.db.numDepVar )
         self.RMSN    = np.zeros( self.db.numDepVar )
@@ -507,8 +507,8 @@ class polyFit():
                             flag = True
             ## if the flag has been tripped, skip to the next j value
             if flag: continue
-            ## loop through sym_same constraints
-            for val in crossSymEven:
+            ## loop through crossSymOdd constraints
+            for val in crossSymOdd:
                 if flag: break
                 ## check if the n values from both variables given in val are even, then trip flag
                 if n[val[0]]%2 == 0 and n[val[1]]%2 == 0:
@@ -517,8 +517,8 @@ class polyFit():
                 if n[val[0]]%2 == 1 and n[val[1]]%2 == 1:
                     flag = True
             if flag: continue
-            ## loop through sym_diff constraints
-            for val in crossSymOdd:
+            ## loop through crossSymEven constraints
+            for val in crossSymEven:
                 if flag: break
                 ## check if the n values from both variables given in val are even and odd, then trip flag
                 if n[val[0]]%2 == 0 and n[val[1]]%2 == 1:
@@ -679,19 +679,17 @@ class polyFit():
             if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]))
             
             if mp == 1:
-                cnt = 0
                 for i in range(self.db.numPoints):
                     if self.db.y[i,z] == None:
                         continue
                     ## calculate the f value from the polynomial function
                     self.f[i,z] = self.evaluate(z, self.db.x[i,:])
-                    cnt += 1
                     if verbose: prog.display()
             else:
                 it = []
                 for i in range(self.db.numPoints):
                     if self.db.y[i,z] == None: continue
-                    it.append((z,self.db.x[i,:]))
+                    it.append((i,z))
                 
                 if mp == 0:
                     cpus = cpu_count()
@@ -702,12 +700,15 @@ class polyFit():
                     chu = k // cpus // 20
                     if chu > 8000: chu = 8000
                     if chu < 1: chu = 1
-                    for i, val in enumerate(pool.starmap(self.evaluate, it, chunksize=chu)):
+                    for i, val in pool.imap_unordered(self.evalMP, it, chunksize=chu):
                         self.f[i,z] = val
                         if verbose: prog.display()
             
+            fnew = np.copy([temp for temp in self.f[:,z] if temp != np.nan])
+            
+            
             # calculate the SSr term
-            self.Sr[z] = float(sum( (ynew - self.f[:,z]) ** 2. ))
+            self.Sr[z] = float(sum( (ynew - fnew) ** 2. ))
             # calculate the R^2 value
             self.R2[z] = 1. - self.Sr[z] / self.St[z]
             
@@ -724,7 +725,10 @@ class polyFit():
             
             # self.RMS  = np.sqrt(np.mean((ynew - f) ** 2.))
             self.RMS[z]  = np.sqrt(self.Sr[z] / k)
-            self.RMSN[z] = np.sqrt(np.mean(((ynew - self.f[:,z])/avg) ** 2.))
+            self.RMSN[z] = np.sqrt(np.mean(((ynew - fnew)/avg) ** 2.))
+    
+    def evalMP(self, args):
+        return args[0], self.evaluate(args[1], self.db.x[args[0],:])
     
     def evaluate(self, z, x):
         if type(x) not in (tuple, list, np.ndarray): x = [x]
@@ -1215,8 +1219,6 @@ class polyFit():
         
         for z in range(self.db.numDepVar):
             
-            kw
-            
             d = {
                 'Independent Variable Order': self.db.namesX,
                 'Nvec': self.Nvec[z],
@@ -1229,7 +1231,7 @@ class polyFit():
                 'St': self.St[z],
                 'Sr': self.Sr[z],
                 'settings': {k: self.kw[z][k] for k in self.kw[z] if k != 'weighting'},
-                'DOF': self.Jtilde[z]
+                'DOF': int(self.Jtilde[z])
                 }
             
             f = open(os.path.join(baseDir, '{}_{}.json'.format(z, self.db.namesY[z])), 'w')
