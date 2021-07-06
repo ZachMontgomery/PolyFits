@@ -1,6 +1,9 @@
 import numpy as np
 import ZachsModules as zm
 from multiprocessing import Pool, cpu_count
+import os
+import shutil
+import json
 
 class database():
     
@@ -1194,6 +1197,76 @@ class polyFit():
         self.Nvec[z] = nvec[:]
         
         self.goodnessParams(mp, (z,), verbose=verbose)
+    
+    ########################################################################
+    ########################################################################
+    ########################################################################
+    
+    def write2Files(self):
+        
+        baseDir = os.path.join(os.getcwd(), self.db.name)
+        
+        if os.path.isdir(baseDir):
+            ans = input('Data already exists. Overwrite data (y/n): ').lower()
+            if ans == 'n': return
+            shutil.rmtree(baseDir)
+        
+        os.mkdir(baseDir)
+        
+        for z in range(self.db.numDepVar):
+            
+            kw
+            
+            d = {
+                'Independent Variable Order': self.db.namesX,
+                'Nvec': self.Nvec[z],
+                'coefficients': self.coef[z],
+                'R2': self.R2[z],
+                'RMS': self.RMS[z],
+                'RMSN': self.RMSN[z],
+                'Syx': self.Syx[z],
+                'ybar': self.ybar[z],
+                'St': self.St[z],
+                'Sr': self.Sr[z],
+                'settings': {k: self.kw[z][k] for k in self.kw[z] if k != 'weighting'},
+                'DOF': self.Jtilde[z]
+                }
+            
+            f = open(os.path.join(baseDir, '{}_{}.json'.format(z, self.db.namesY[z])), 'w')
+            json.dump(d, f, indent=4)
+            f.close()
+        
+        np.save(os.path.join(baseDir, 'IndependentVariables'), self.db.x)
+        np.save(os.path.join(baseDir, 'DependentVariables'), self.db.y)
+    
+
+def readPolyFitsFromFiles(self, base):
+    
+    workingDir = os.getcwd()
+    baseDir = os.path.join(workingDir, base)
+    
+    if not os.path.isdir(baseDir): raise ValueError()
+    
+    os.chdir(baseDir)
+    
+    kw = []
+    
+    
+    for fn in os.listdir():
+        
+        if fn[-4:] == '.npy':
+            
+            if fn == 'DependentVariables.npy':
+                x = np.load(fn)
+            elif fn == 'IndependentVariables.npy':
+                y = np.load(fn)
+            
+        elif fn[-5:] == '.json':
+            
+            pass
+    
+    
+    
 
 
 
