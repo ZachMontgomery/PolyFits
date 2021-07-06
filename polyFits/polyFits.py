@@ -561,7 +561,7 @@ class polyFit():
                 cpus = mp
             
             with Pool(cpus) as pool:
-                chu = lenActive*k//cpus//20
+                chu = lenActive*k//cpus//4
                 if chu > 8000: chu = 8000
                 if chu < 1: chu = 1
                 for vals in pool.imap_unordered(self.createX, it, chunksize=chu):
