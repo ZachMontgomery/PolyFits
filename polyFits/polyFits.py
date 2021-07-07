@@ -1068,6 +1068,7 @@ class polyFit():
         self.kw = []
         self.Jtilde = []
         namesY = []
+        self.numCoef = []
         
         if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files')
         
@@ -1075,19 +1076,19 @@ class polyFit():
             
             if fn[-4:] == '.npy':
                 
-                if fn == 'DependentVariables.npy':
+                if fn == 'IndependentVariables.npy':
                     x = np.load(fn)
-                elif fn == 'IndependentVariables.npy':
+                elif fn == 'DependentVariables.npy':
                     y = np.load(fn)
                 elif fn == 'PolyFuncValues.npy':
                     self.f = np.load(fn)
                 
             elif fn[-5:] == '.json':
                 
-                for i,c in enumerate(fn):
+                for I,c in enumerate(fn):
                     if c == '_': break
                 
-                i = int(fn[:i])
+                i = int(fn[:I])
                 
                 order.append(i)
                 
@@ -1096,7 +1097,7 @@ class polyFit():
                 f.close()
                 
                 self.Nvec.append( data['Nvec'] )
-                self.coef.append( data['coef'] )
+                self.coef.append( data['coefficients'] )
                 self.R2.append( data['R2'] )
                 self.RMS.append( data['RMS'] )
                 self.RMSN.append( data['RMSN'] )
@@ -1106,8 +1107,9 @@ class polyFit():
                 self.Sr.append( data['Sr'] )
                 self.kw.append( data['settings'] )
                 self.Jtilde.append( data['DOF'] )
+                self.numCoef.append( self.calcNumCoef(data['Nvec']) )
                 
-                namesY.append( fn[i+1:-5] )
+                namesY.append( fn[I+1:-5] )
                 
                 if i == 0: namesX = data['Independent Variable Order']
             
@@ -1115,11 +1117,11 @@ class polyFit():
         
         os.chdir(workingDir)
         
-        zm.nm.zSort(order, self.Nvec, self.coef, self.R2, self.RMS, self.RMSN, self.Syx, self.ybar, self.St, self.Sr, self.kw, self.Jtilde, namesY, verbose=verbose)
+        zm.nm.zSort(order, self.Nvec, self.coef, self.R2, self.RMS, self.RMSN, self.Syx, self.ybar, self.St, self.Sr, self.kw, self.Jtilde, namesY, self.numCoef, verbose=verbose)
         
         self.db = database(x, y, name=base, namesX=namesX, namesY=namesY)
         
-        
+        self.auto = [False if 'Nvec' in self.kw[i] else True for i in range(self.db.numDepVar)]
     
     
     
