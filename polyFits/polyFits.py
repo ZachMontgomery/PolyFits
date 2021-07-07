@@ -37,7 +37,7 @@ class database():
 
 class polyFit():
     
-    def __init__(self, db, kw, mpFits=1, verbose=True):
+    def __init__(self, *args, mpFits=1, verbose=True):
         '''Performs polynomial fits to a data set.
         
         Parameters
@@ -103,7 +103,7 @@ class polyFit():
             https://arc.aiaa.org/doi/abs/10.2514/6.2019-2916.
             This option performs a multivariable polynomial fit to the data
             set for a given set of polynomial orders of each of the
-            independent variables and cen be performed with full control of
+            independent variables and can be performed with full control of
             the polynomial fit by allowing: various symmetry constraints,
             forcing given coefficients to zero or a set value, and custom
             weighting of the data points.
@@ -138,10 +138,10 @@ class polyFit():
                     along a diagonal among the two independent variables 
                     listed. The even cross symmetry forces all polynomial
                     terms between the two independent variables that have
-                    different parity on the exponents, i.e. x1^4 * x2^5 have
-                    exponents that are odd and even, so the even cross
-                    symmetry would force the poly coefficient related to
-                    this term to 0. Defaults to an empty list
+                    different parity on the exponents to zero, i.e. x1^4 *
+                    x2^5 have exponents that are odd and even, so the even
+                    cross symmetry would force the poly coefficient related
+                    to this term to 0. Defaults to an empty list
                 
                 crossSymOdd : list, optional
                     list of tuples containing two integers. The two integers
@@ -150,10 +150,10 @@ class polyFit():
                     along a diagonal among the two independent variables 
                     listed. The odd cross symmetry forces all polynomial
                     terms between the two independent variables that have
-                    the same parity on the exponents, i.e. x1^2 * x2^4 both
-                    exponents are even so the odd cross symmetry would force
-                    the poly coefficient related to this term to 0. Defaults
-                    to an empty list
+                    the same parity on the exponents to zero, i.e. x1^2*x2^4
+                    both exponents are even so the odd cross symmetry would
+                    force the poly coefficient related to this term to 0.
+                    Defaults to an empty list
                 
                 zeroConstraints : list, optional
                     entries in the list are tuples of ints of length equal
@@ -228,103 +228,110 @@ class polyFit():
                 curve fitting process.
         '''
         
-        ## copy in database
-        self.db = db
-        
-        ## create array for polynomial values corresponding to the db values
-        self.f = np.zeros((self.db.numPoints, self.db.numDepVar)) * np.nan
-        
-        ## copy in fit arguments
-        self.kw = kw[:]
-        
-        ## determine which fits will use auto
-        self.auto = [False] * self.db.numDepVar
-        for i in range(self.db.numDepVar):
-            if self.kw[i].get('Nvec', None) == None: self.auto[i] = True
-        
-        ## initialize the global Nvec
-        self.Nvec    = [None] * self.db.numDepVar
-        
-        ## initialize the global number of coefficients
-        self.numCoef = np.array( [0]*self.db.numDepVar )
-        
-        ## initialize the global coefficient list
-        self.coef    = [None] * self.db.numDepVar
-        
-        ## initialize other global goodness measurement variables
-        self.Jtilde  = np.zeros( self.db.numDepVar, dtype=int )
-        self.R2      = np.zeros( self.db.numDepVar )
-        self.RMS     = np.zeros( self.db.numDepVar )
-        self.RMSN    = np.zeros( self.db.numDepVar )
-        self.Syx     = np.zeros( self.db.numDepVar )
-        self.ybar    = np.zeros( self.db.numDepVar )
-        self.St      = np.zeros( self.db.numDepVar )
-        self.Sr      = np.zeros( self.db.numDepVar )
-        
-        ###################################
-        ## check for duplicate manual fits
-        ###################################
-        ## initialize an empty list to track duplicates
-        self.duplicateManFits = []
-        ## initialize a list of the unused dep var indices for the manual fits
-        unusedManFits = [i for i in range(self.db.numDepVar) if not self.auto[i]]
-        ## loop while there are still untracked manual fits
-        while len(unusedManFits) > 0:
-            ## initialize a duplicates list with the next untracked man fit
-            duplicates = [unusedManFits.pop(0)]
-            ## loop thru the remaining untracked man fits
-            for i in range(len(unusedManFits)-1,-1,-1):
-                ## check if the untracked man fit is the same as man fit of focus
-                if self.kw[unusedManFits[i]] == self.kw[duplicates[0]] and not self.kw[duplicates[0]].get('percent', False):
-                    ## track the match
-                    duplicates.append( unusedManFits.pop(i) )
-            ## sort the duplicates
-            zm.nm.zSort(duplicates, verbose=False)
-            ## add the duplicates to the global variable
-            self.duplicateManFits.append( tuple(duplicates) )
-        # ## loop thru the fits and print the duplicates
-        # if verbose:
-            # for dupFit in self.duplicateManFits:
-                # k = len(dupFit)
-                # if k > 1:
-                    # zm.io.text('Found duplicate fit(s) for variables:', *[' {}'.format(self.db.namesY[i]) for i in dupFit])
-        
-        ## initialize a list of the auto fit dep var indices
-        autoFits = [i for i in range(self.db.numDepVar) if self.auto[i]]
-        
-        ###################
-        ## Perform the fits
-        ###################
-        ## check if perfoming fits individually
-        if mpFits == 1:
-            ## perform the manual fits
-            for dupFit in self.duplicateManFits:
-                if verbose: zm.io.text('Performing manual fit(s) for:', *['{}'.format(self.db.namesY[i]) for i in dupFit])
-                self.manFit(dupFit)
-            ## peform the auto fits
-            for i in autoFits:
-                if verbose: zm.io.text('Performing auto fit for {}'.format(self.db.namesY[i]))
-                self.autoFit(i)
-        else: ## perfoming the fits simultanuously with multiprocessing
-            ## disable the multiprocessing option for all manual fits
+        ## check if number of inputs is one
+        if len(args) == 1:
+            self.readPolyFitsFromFiles(args[0], verbose=verbose)
+        else:
+            db, kw = args
+            
+            ## copy in database
+            self.db = db
+            
+            ## create array for polynomial values corresponding to the db values
+            self.f = np.zeros((self.db.numPoints, self.db.numDepVar)) * np.nan
+            
+            ## copy in fit arguments
+            self.kw = kw[:]
+            
+            ## determine which fits will use auto
+            self.auto = [False] * self.db.numDepVar
             for i in range(self.db.numDepVar):
-                if not self.auto[i]: self.kw[i]['mp'] = 1
-            ## initialize iterable for the multiprocessing
-            it = []
-            ## add on the args for the manual fits
-            for dupFit in self.duplicateManFits:
-                it.append( dupFit )
-            ## add on the args for the auto fits
-            for i in autoFits:
-                it.append( i )
-            ## check if using the same numer of cpus as on the current machine
-            if mpFits == 0: mpFits = cpu_count()
-            ## initialize progress bar
-            if verbose: prog = zm.io.Progress(len(it), title='Performing fits for {}'.format(self.db.name))
-            ## perform the fits
-            with Pool(mpFits) as pool:
-                for _ in pool.imap_unordered(self.whichFit, it):
-                    if verbose: prog.display()
+                if self.kw[i].get('Nvec', None) == None: self.auto[i] = True
+            
+            ## initialize the global Nvec
+            self.Nvec    = [None] * self.db.numDepVar
+            
+            ## initialize the global number of coefficients
+            self.numCoef = np.array( [0]*self.db.numDepVar )
+            
+            ## initialize the global coefficient list
+            self.coef    = [None] * self.db.numDepVar
+            
+            ## initialize other global goodness measurement variables
+            self.Jtilde  = np.zeros( self.db.numDepVar, dtype=int )
+            self.R2      = np.zeros( self.db.numDepVar )
+            self.RMS     = np.zeros( self.db.numDepVar )
+            self.RMSN    = np.zeros( self.db.numDepVar )
+            self.Syx     = np.zeros( self.db.numDepVar )
+            self.ybar    = np.zeros( self.db.numDepVar )
+            self.St      = np.zeros( self.db.numDepVar )
+            self.Sr      = np.zeros( self.db.numDepVar )
+            
+            ###################################
+            ## check for duplicate manual fits
+            ###################################
+            ## initialize an empty list to track duplicates
+            self.duplicateManFits = []
+            ## initialize a list of the unused dep var indices for the manual fits
+            unusedManFits = [i for i in range(self.db.numDepVar) if not self.auto[i]]
+            ## loop while there are still untracked manual fits
+            while len(unusedManFits) > 0:
+                ## initialize a duplicates list with the next untracked man fit
+                duplicates = [unusedManFits.pop(0)]
+                ## loop thru the remaining untracked man fits
+                for i in range(len(unusedManFits)-1,-1,-1):
+                    ## check if the untracked man fit is the same as man fit of focus
+                    if self.kw[unusedManFits[i]] == self.kw[duplicates[0]] and not self.kw[duplicates[0]].get('percent', False):
+                        ## track the match
+                        duplicates.append( unusedManFits.pop(i) )
+                ## sort the duplicates
+                zm.nm.zSort(duplicates, verbose=False)
+                ## add the duplicates to the global variable
+                self.duplicateManFits.append( tuple(duplicates) )
+            # ## loop thru the fits and print the duplicates
+            # if verbose:
+                # for dupFit in self.duplicateManFits:
+                    # k = len(dupFit)
+                    # if k > 1:
+                        # zm.io.text('Found duplicate fit(s) for variables:', *[' {}'.format(self.db.namesY[i]) for i in dupFit])
+            
+            ## initialize a list of the auto fit dep var indices
+            autoFits = [i for i in range(self.db.numDepVar) if self.auto[i]]
+            
+            ###################
+            ## Perform the fits
+            ###################
+            ## check if perfoming fits individually
+            if mpFits == 1:
+                ## perform the manual fits
+                for dupFit in self.duplicateManFits:
+                    if verbose: zm.io.text('Performing manual fit(s) for:', *['{}'.format(self.db.namesY[i]) for i in dupFit])
+                    self.manFit(dupFit)
+                ## peform the auto fits
+                for i in autoFits:
+                    if verbose: zm.io.text('Performing auto fit for {}'.format(self.db.namesY[i]))
+                    self.autoFit(i)
+            else: ## perfoming the fits simultanuously with multiprocessing
+                ## disable the multiprocessing option for all fits and verbosity
+                for i in range(self.db.numDepVar):
+                    self.kw[i]['mp'] = 1
+                    self.kw[i]['verbose'] = False
+                ## initialize iterable for the multiprocessing
+                it = []
+                ## add on the args for the manual fits
+                for dupFit in self.duplicateManFits:
+                    it.append( dupFit )
+                ## add on the args for the auto fits
+                for i in autoFits:
+                    it.append( i )
+                ## check if using the same numer of cpus as on the current machine
+                if mpFits == 0: mpFits = cpu_count()
+                ## initialize progress bar
+                if verbose: prog = zm.io.Progress(len(it), title='Performing fits for {}'.format(self.db.name))
+                ## perform the fits
+                with Pool(mpFits) as pool:
+                    for _ in pool.imap_unordered(self.whichFit, it):
+                        if verbose: prog.display()
         
         ## display the results
         if verbose: print(self)
@@ -355,104 +362,6 @@ class polyFit():
         return kk, jj, temp
     
     def manFit(self, iy):
-        """Performs the multivariable polynomial fit using Least Squares Regression.
-        
-        Parameters
-        ----------
-        Nvec : list
-            List with a length V equal to the number of independent variables.
-            The ith element values are integers of polynomial order of the ith
-            independent variable.
-        
-        x : numpy array or nested list
-            Numpy array or nested list of size k by V, where k is the total
-            number of points in the dataset. The ith column represents the ith
-            independent variable values with the rows representing the different
-            data points.
-        
-        y : numpy array or list
-            List with a length of k with the dependent variable values
-        
-        interaction : boolean, optional
-            Boolean value with default set to False. This variable determines
-            whether or not interaction terms are included in the fit function.
-            If set to True, interaction terms up the max order for each
-            independent variable are included, i.e. if Nvec = [3,2], then the
-            highest interaction term included is x_1^3*x_2^2. Specific
-            interaction terms can be omitted using the constraints input.
-        
-        sym : list, optional
-            Optional list that defaults as an empty list. If used, the length
-            should be V and each element should contain a boolean, True/False.
-            The ith element determines if the ith independent variable is
-            symmetric either even or odd, which is determined by the order given
-            in Nvec. This will also remove the cooresponding interaction terms
-            if they are enabled.
-        
-        sym_same : list, optional
-            Optional list that defaults as an empty list. If used, the entries
-            in the list should be tuples with two integers. The integers
-            represent the independent variables that the "same" symmetry
-            condition will be applied. The "same" symmetry forces all
-            polynomial terms between the two independent variables that have the
-            same parity on the exponent, i.e. x1^3 * x2^5 both exponents are odd
-            so the "same" symmetry would force the poly, coefficient related to
-            this term to 0.
-        
-        sym_diff : list, optional
-            Optional list that defaults as an empty list. Same as sym_same,
-            except that it implements the "diff" symmetry constraint of opposite
-            parity exponent terms being forced to 0.
-        
-        zeroConstraints : list, optional
-            An optional list that defaults as an empty list. Entries in the list
-            contain integer tuples of length V. The integer values represent the
-            powers of the independent variables whose coefficient will be forced
-            to 0 before the best fit calculations are performed, allowing the
-            user to omit specific polynomial terms
-        
-        constraints : list, optional
-            An optional list that defaults to an empty list. Entries in the list
-            contain tuples of length 2. The first entry is a list of integers
-            that represent the powers of the independent variables whose
-            coefficient will then be forced to be equal to the second entry in
-            the tuple, which should be a float.
-        
-        percent : boolean, optional
-            Boolean value with default set to False. When set to True the least
-            squares is performed on the percent error squared. This option
-            should not be used if y contains any zero or near zero values, as
-            this might cause a divide by zero error.
-        
-        weighting : callable function, optional
-            If given, weighting should be a function that takes as arguments:
-            x, y, and p where x and y are the independent and dependent
-            variables defined above and p is the index representing a certain
-            data point. weighting should return a 'weighting factor' that
-            determines how important that datapoint is. Returning a '1' weights
-            the datapoint normally, while a '0' will cause the datapoint to be
-            ignored.
-        
-        calcR2 : boolean, optional
-            Boolean value with default set to True. Determines if the funciton
-            should compute the R^2 value and return it.
-        
-        verbose : boolean, optional
-            Boolean value with default set to True. Determines if the function
-            will print relavent data on screen during computation time.
-        
-        Returns
-        -------
-        
-        list
-            List of the polynomial coefficients with a length equal to the
-            products of the Nvec elements plus one.
-            i.e.: (n_vec0+1)*(n_vec1+1)*...
-        
-        float, optional
-            The coefficient of determination, also referred to as the R^2 value.
-            A value of 1 means the polynomial fits the data perfectly.
-        """
         
         ## initialize useful variables
         k = self.db.numPoints
@@ -750,52 +659,6 @@ class polyFit():
         # return the finalized summation value
         return f
     
-    '''
-    @staticmethod
-    def compose_j(iy, n):
-        # initialize j to 0
-        j = 0
-        # loop through independent variables
-        for v in range(1,self.db.numIndVar+1):
-            # initialize product series to 1
-            prod = 1
-            # loop through w values for product series
-            for w in range(v+1,self.db.numIndVar+1):
-                # multiply on the term to the product series
-                prod *= self.Nvec[iy][w-1] + 1
-            # add on term onto j
-            j += n[v-1] * prod
-        return j
-    
-    @staticmethod
-    def decompose_j(self, iy, j):
-        # initialize n values to nothing
-        n = [None]*self.db.numIndVar
-        # loop through the n values that need to be solved, starting at the highest and working down
-        for v in range(self.db.numIndVar,0,-1):
-            # initialize the denomenator product series to 1
-            denom = 1
-            # loop through the w values needed for the product series
-            for w in range(v+1,self.db.numIndVar+1):
-                # multiply on the terms for the denomenator product series
-                denom *= self.Nvec[iy][w-1] + 1
-            # initialize the summation variable to 0
-            summ = 0
-            # loop through the u values necessary for the summation
-            for u in range(v+1,self.db.numIndVar+1):
-                # initialize the product series variable inside the summation to 1
-                prod = 1
-                # loop through the s values needed for the product series that is inside the summation
-                for s in range(u+1,self.db.numIndVar+1):
-                    # multiply on the term for the product series that is inside of the summation
-                    prod *= self.Nvec[iy][s-1] + 1
-                # add on the needed term to the summation series
-                summ += n[u-1] * prod
-            # finally calculate the n value cooresponding to this v
-            n[v-1] = int(round( ((j-summ)/denom)%(self.Nvec[iy][v-1]+1) ))
-        return n
-    '''
-    
     @staticmethod
     def compose_j(n, Nvec):
         """Calculates the j index of the multivariable polynomial function.
@@ -991,66 +854,6 @@ class polyFit():
         raise ValueError('Unable to compose n into k: current k value {}'.format(k))
     
     def autoFit(self, z): #X, y, MaxOrder=12, tol=1.e-12, sigma=None, sigmaMultiplier=1., verbose=True):
-        '''Automatic Multivariable Polynomial Curve Fit
-        
-        Performs a multivariate polynomial curve fit to a dataset and
-        automatically determines which polynomial terms to use based on a
-        balance between the goodness of the fit and a predictve capabilities
-        measure that attempts to make the model compact.
-        
-        Based on the method given by: Morelli, E. A., "Global Nonlinear
-        Aerodynamic Modeling using Multivariate Orthogonal Functions," Journal
-        of Aircraft, Vol. 32, Issue 2, 1995, pp. 270-277,
-        https://arc.aiaa.org/doi/abs/10.2514/3.4
-        
-        Parameters
-        ----------
-        X : numpy array
-            Array of shape (N,m). X consists of all the independent variables in
-            the dataset. N is the number of data points in the set and m is the
-            number of independent variables
-        
-        y : list or numpy array
-            Array with length N. y is the dependent variable values
-            cooresponding to the independent variables in X
-        
-        MaxOrder : integer, optional
-            Gives the max order of polynomial for any one of the independent
-            varialbes to try. Defaults to 12
-        
-        tol : float, optional
-            Gives the cut-off value for any polynomial coefficient to not be
-            included in the final results. If a coefficient has an absolute
-            value below tol, it won't be included. Defaults to 1e-12
-        
-        sigma : float, optional
-            Value used to determine the trade off between how good of a fit to
-            perform and how many terms to keep. Defaults to None, which causes
-            the function to calculate sigma automatically using the mean squared
-            of the difference of the independent variable values with respect to
-            the mean independent variable value of the dataset
-        
-        sigmaMultiplier : float, optional
-            Term multiplied onto sigma to change it's value. Allows using a
-            multiple of the automatically determined sigma value. Defaults to 1.
-        
-        verbose : boolean, optional
-            Determines the verbosity of the function. Defaults to True.
-        
-        Returns
-        -------
-        list
-            A list of the polynomial coefficients.
-        
-        list
-            A list of the max polynomial orders for each independent variable.
-            The length of this list is therefore m. This list is comparable to
-            the 'Nvec' object used throughout this module
-        
-        float
-            The coefficient of determination, R^2 value, representing the
-            goodness of the fit
-        '''
         
         maxOrder        = self.kw[z].get('maxOrder', 6)
         tol             = self.kw[z].get('tol', 1e-12)
@@ -1240,32 +1043,84 @@ class polyFit():
         
         np.save(os.path.join(baseDir, 'IndependentVariables'), self.db.x)
         np.save(os.path.join(baseDir, 'DependentVariables'), self.db.y)
-    
-
-def readPolyFitsFromFiles(self, base):
-    
-    workingDir = os.getcwd()
-    baseDir = os.path.join(workingDir, base)
-    
-    if not os.path.isdir(baseDir): raise ValueError()
-    
-    os.chdir(baseDir)
-    
-    kw = []
+        np.save(os.path.join(baseDir, 'PolyFuncValues'), self.f)
     
     
-    for fn in os.listdir():
+    def readPolyFitsFromFiles(self, base, verbose=True):
         
-        if fn[-4:] == '.npy':
+        workingDir = os.getcwd()
+        baseDir = os.path.join(workingDir, base)
+        
+        if not os.path.isdir(baseDir): raise ValueError()
+        
+        os.chdir(baseDir)
+        
+        order = []
+        self.Nvec = []
+        self.coef = []
+        self.R2 = []
+        self.RMS = []
+        self.RMSN = []
+        self.Syx = []
+        self.ybar = []
+        self.St = []
+        self.Sr = []
+        self.kw = []
+        self.Jtilde = []
+        namesY = []
+        
+        if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files')
+        
+        for fn in os.listdir():
             
-            if fn == 'DependentVariables.npy':
-                x = np.load(fn)
-            elif fn == 'IndependentVariables.npy':
-                y = np.load(fn)
+            if fn[-4:] == '.npy':
+                
+                if fn == 'DependentVariables.npy':
+                    x = np.load(fn)
+                elif fn == 'IndependentVariables.npy':
+                    y = np.load(fn)
+                elif fn == 'PolyFuncValues.npy':
+                    self.f = np.load(fn)
+                
+            elif fn[-5:] == '.json':
+                
+                for i,c in enumerate(fn):
+                    if c == '_': break
+                
+                i = int(fn[:i])
+                
+                order.append(i)
+                
+                f = open(fn, 'r')
+                data = json.load(f)
+                f.close()
+                
+                self.Nvec.append( data['Nvec'] )
+                self.coef.append( data['coef'] )
+                self.R2.append( data['R2'] )
+                self.RMS.append( data['RMS'] )
+                self.RMSN.append( data['RMSN'] )
+                self.Syx.append( data['Syx'] )
+                self.ybar.append( data['ybar'] )
+                self.St.append( data['St'] )
+                self.Sr.append( data['Sr'] )
+                self.kw.append( data['settings'] )
+                self.Jtilde.append( data['DOF'] )
+                
+                namesY.append( fn[i+1:-5] )
+                
+                if i == 0: namesX = data['Independent Variable Order']
             
-        elif fn[-5:] == '.json':
-            
-            pass
+            if verbose: prog.display()
+        
+        os.chdir(workingDir)
+        
+        zm.nm.zSort(order, self.Nvec, self.coef, self.R2, self.RMS, self.RMSN, self.Syx, self.ybar, self.St, self.Sr, self.kw, self.Jtilde, namesY, verbose=verbose)
+        
+        self.db = database(x, y, name=base, namesX=namesX, namesY=namesY)
+        
+        
+    
     
     
     
@@ -1287,7 +1142,7 @@ def readPolyFitsFromFiles(self, base):
 
 if __name__ == '__main__':
     
-    k = 1000
+    k = 10000
     V = 5
     U = 10
     x = np.random.rand(k,V)
@@ -1303,9 +1158,13 @@ if __name__ == '__main__':
         'Nvec': [1,2,1,1,1]
         }
     
-    d3 = {'maxOrder': 2}
+    d3 = {'maxOrder': 2, 'sigmaMultiplier':1e-5}
     
-    kw = [d1, d2, d3, d1, d2, d1, d2, d1, d2, d1]
+    # kw = [d1, d2, d3, d1, d2, d1, d2, d1, d2, d1]
+    kw = [d3, d3, d3, d3, d3, d3, d3, d3, d3, d3]
     
-    myFits = polyFit(db, kw)
+    myFits = polyFit(db, kw, mpFits=0)
     
+    for c in myFits.coef:
+        print()
+        print(c)
