@@ -34,6 +34,106 @@ class database():
             self.namesY = namesY
         
         self.name = name
+    
+    def myScatterPlotter(self, ax, constraints, iy, avgLines=True, **kwargsScatter):
+        
+        if constraints.count(None) != 2: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot')
+        
+        I, J = -1, -1
+        for i,c in enumerate(constraints):
+            if I == -1 and c == None:
+                I = i
+            elif J == -1 and c == None:
+                J = i
+        
+        Ncon = len(constraints)
+        
+        plotx, ploty, plotz = [], [], []
+        
+        for i in range(self.numPoints):
+            
+            addPoint = True
+            for j in range(Ncon):
+                if constraints[j] == None: continue
+                if not zm.nm.isClose(self.x[i,j], constraints[j], tol=1.e-6):
+                    addPoint = False
+                    break
+            
+            if addPoint:
+                
+                plotx.append( self.x[i,I] )
+                ploty.append( self.x[i,J] )
+                plotz.append( self.y[i,iy] )
+        
+        ########################################################################
+        ########################################################################
+        ########################################################################
+        
+        ## find unique points
+        ux, uy, uz = [], [], []
+        n = len(plotx)
+        for i in plotx:
+            if i not in ux: ux.append(i)
+        for i in ploty:
+            if i not in uy: uy.append(i)
+        
+        ## determine range/mesh
+        zm.nm.zSort(ux, verbose=False)
+        zm.nm.zSort(uy, verbose=False)
+        i = len(ux)
+        j = len(uy)
+        xmesh, ymesh = np.meshgrid(ux, uy)
+        zmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
+        
+        ## fill in meshes
+        for i in range(n):
+            px, py, pz = plotx[i], ploty[i], plotz[i]
+            row = uy.index(py)
+            col = ux.index(px)
+            zmesh[row, col] = pz
+        
+        ax.plot_wireframe(xmesh, ymesh, zmesh)#, cmap=cm.coolwarm)
+        
+        ########################################################################
+        ########################################################################
+        ########################################################################
+        
+        ax.scatter(plotx, ploty, plotz, **kwargsScatter)
+        ax.set_xlabel(self.namesX[I])# labelsI[I])
+        ax.set_ylabel(self.namesX[J])
+        ax.set_zlabel(labelD)
+        
+        # ax.set_xlim([-0.05,0.05])
+        # ax.set_ylim([-0.005,0.005])
+        if avgLines:
+            if len(plotx) != 0:
+                avgx = sum(plotx) / len(plotx)
+                minx = min(plotx)
+                maxx = max(plotx)
+            else:
+                avgx = 0.
+                minx = 0.
+                maxx = 0.
+            if len(ploty) != 0:
+                avgy = sum(ploty) / len(ploty)
+                miny = min(ploty)
+                maxy = max(ploty)
+            else:
+                avgy = 0.
+                miny = 0.
+                maxy = 0.
+            if len(plotz) != 0:
+                avgz = sum(plotz) / len(plotz)
+                minz = min(plotz)
+                maxz = max(plotz)
+            else:
+                avgz = 0.
+                minz = 0.
+                maxz = 0.
+            
+            ax.plot([minx,maxx], [avgy,avgy], [avgz,avgz], 'r')
+            ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
+            ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
 
 class polyFit():
     
@@ -640,8 +740,12 @@ class polyFit():
             k = len(ynew)
             ## calculate mean y value
             self.ybar[z] = sum(ynew) / float(k)
+            ## compute weighting terms
+            W = self.kw[z].get('weighting', None)
+            P = self.kw[z].get('percent', False)
+            w = np.copy([self.computeWeighting((kk, z, W, P)) for kk in range(self.db.numPoints) if self.db.y[kk,z] != None])
             ## calculate the SSt value
-            self.St[z] = float(sum( (ynew - self.ybar[z]) ** 2. ))
+            self.St[z] = float(sum( ((ynew - self.ybar[z])*w) ** 2. ))
             
             ## loop through the datapoints
             if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]))
@@ -676,7 +780,7 @@ class polyFit():
             
             
             # calculate the SSr term
-            self.Sr[z] = float(sum( (ynew - fnew) ** 2. ))
+            self.Sr[z] = float(sum( ((ynew - fnew)*w) ** 2. ))
             # calculate the R^2 value
             self.R2[z] = 1. - self.Sr[z] / self.St[z]
             
@@ -693,7 +797,7 @@ class polyFit():
             
             # self.RMS  = np.sqrt(np.mean((ynew - f) ** 2.))
             self.RMS[z]  = np.sqrt(self.Sr[z] / k)
-            self.RMSN[z] = np.sqrt(np.mean(((ynew - fnew)/avg) ** 2.))
+            self.RMSN[z] = np.sqrt(np.mean(((ynew - fnew)*w/avg) ** 2.))
     
     def evalMP(self, args):
         return args[0], self.evaluate(args[1], self.db.x[args[0],:])
