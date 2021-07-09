@@ -281,7 +281,7 @@ class polyFit():
                 ## loop thru the remaining untracked man fits
                 for i in range(len(unusedManFits)-1,-1,-1):
                     ## check if the untracked man fit is the same as man fit of focus
-                    if self.kw[unusedManFits[i]] == self.kw[duplicates[0]] and not self.kw[duplicates[0]].get('percent', False):
+                    if self.kw[unusedManFits[i]] == self.kw[duplicates[0]] and not self.kw[duplicates[0]].get('percent', False) and not 'weighting' in self.kw[duplicates[0]]:
                         ## track the match
                         duplicates.append( unusedManFits.pop(i) )
                 ## sort the duplicates
@@ -361,6 +361,45 @@ class polyFit():
             # temp *= x[kk,v] ** n[v]
         return kk, jj, temp
     
+    def computeWeighting(self, args):
+        kk, z, weighting, percent = args
+        w = 1.
+        if callable(weighting): w *= weighting(self.db, z, kk) ** 2.
+        if percent: w /= self.db.y[kk, z] **2.
+        return kk, w
+    
+    def __computeCHU__(self, n, cpus):
+        chu = n // cpus // 20
+        # chu = 1
+        if chu > 8000: return 8000
+        if chu < 1: return 1
+        return chu
+    
+    def createA(self, args):
+        r, c, z, w, p = args
+        a = 0.
+        nr = self.decompose_j(r, self.Nvec[z])
+        nc = self.decompose_j(c, self.Nvec[z])
+        n = [nr[i] + nc[i] for i in range(self.db.numIndVar)]
+        for kk in range(self.db.numPoints):
+            t = self.computeWeighting(kk, z, w, p)[-1]
+            for v in range(self.db.numIndVar):
+                for _ in range(n[v]): t *= self.db.x[kk,v]
+            a += t
+        return r, c, a
+    
+    def createB(self, args):
+        r, iy, w, p = args
+        b = np.zeros(len(iy))
+        nr = self.decompose_j(r, self.Nvec[iy[0]])
+        for ib,z in enumerate(iy):
+            for kk in range(self.db.numPoints):
+                t = self.computeWeighting(kk, z, w, p)[-1] * self.db.y[kk,z]
+                for v in range(self.db.numIndVar):
+                    for _ in range(nr[v]): t *= self.db.x[kk,v]
+                b[ib] += t
+        return r, b
+    
     def manFit(self, iy):
         
         ## initialize useful variables
@@ -439,103 +478,123 @@ class polyFit():
             if not flag: active.append(j)
         lenActive = len(active)
         
-        ## compute X matrix
+        ## compute A and b matrices
         ########################################################################
-        ## initialize X matrix to nan's
-        X = np.ones((k,lenActive)) * np.nan
-        ## set progress bar
-        if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions')
-        
-        if mp == 1:
-            ## loop thru data points
-            for kk in range(k):
-                ## loop thru used polynomial coefficients
-                for jj,j in enumerate(active):
-                    X[kk,jj] = self.createX((kk, jj, z, j))[-1]
-                    if verbose: prog.display()
-        else:
+        ## attempt to use the basis functions matrix
+        try:
+        # if False:
+            X = np.zeros((k,lenActive))
+            if callable(weighting) or percent: Xt = X.T.copy()
+            A = np.zeros((lenActive,lenActive))
+            b = np.zeros((lenActive, len(iy)))
             
-            it = [None]*(k*lenActive)
-            cnt = -1
-            ## loop thru data points
-            for kk in range(k):
-                ## loop thru used polynomial coefficients
-                for jj,j in enumerate(active):
-                    cnt += 1
-                    it[cnt] = (kk, jj, z, j)
+            ## set progress bar
+            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions')
             
-            if mp == 0:
-                cpus = cpu_count()
-            else:
-                cpus = mp
-            
-            with Pool(cpus) as pool:
-                chu = lenActive*k//cpus//4
-                if chu > 8000: chu = 8000
-                if chu < 1: chu = 1
-                for vals in pool.imap_unordered(self.createX, it, chunksize=chu):
-                    kk, jj, val = vals
-                    X[kk, jj] = val
-                    if verbose: prog.display()
-        
-        
-        ## add weighting factor
-        if callable(weighting) or percent:
-            
-            try:
-                W = np.eye(k)
-                
-                if verbose:
-                    if callable(weighting) and percent:
-                        pLen = k*2
-                    else:
-                        pLen = k
-                    prog = zm.io.oneLineProgress(pLen, msg='Setting up weighting factors')
-                
-                if callable(weighting):
-                    for kk in range(k):
-                        W[kk,kk] = weighting(self.db, z, kk) ** 2.
-                        if verbose: prog.display()
-                
-                ## set lmda vector
-                if percent:
-                    for kk in range(k):
-                        W[kk,kk] /= self.db.y[kk,z] ** 2.
-                        if verbose: prog.display()
-                
-                ## compute A and b
-                if verbose: zm.io.oneLineText('Computing the A matrix and b vector')
-                
-                A = X.T.dot(W).dot(X)
-                b = X.T.dot(W).dot(self.db.y)
-                
-                del W
-                
-            except MemoryError:
-                
-                if verbose:
-                    zm.io.oneLineText('Insufficient memory available for matrix implementation of weighting.')
-                    prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors manually')
-                
-                Xt = X.T.copy()
-                
+            if mp == 1:
+                ## loop thru data points
                 for kk in range(k):
-                    w = 1.
-                    if callable(weighting): w *= weighting(self.db, z, kk) ** 2.
-                    if self.percent: w /= self.db.y[kk, z] **2.
-                    Xt[:,kk] *= w
-                    prog.display()
+                    ## loop thru used polynomial coefficients
+                    for jj,j in enumerate(active):
+                        X[kk,jj] = self.createX((kk, jj, z, j))[-1]
+                        if verbose: prog.display()
+            else:
                 
-                zm.io.oneLineText('Computing the A matrix and b vector')
+                it = [None]*(k*lenActive)
+                cnt = -1
+                ## loop thru data points
+                for kk in range(k):
+                    ## loop thru used polynomial coefficients
+                    for jj,j in enumerate(active):
+                        cnt += 1
+                        it[cnt] = (kk, jj, z, j)
+                
+                if mp == 0:
+                    cpus = cpu_count()
+                else:
+                    cpus = mp
+                
+                with Pool(cpus) as pool:
+                    for vals in pool.imap_unordered(self.createX, it, chunksize=self.__computeCHU__(lenActive*k, cpus)):
+                        kk, jj, val = vals
+                        X[kk, jj] = val
+                        if verbose: prog.display()
+                del it
+            
+            if callable(weighting) or percent:
+                Xt = X.T.copy()
+                if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors')
+                if mp == 1:
+                    for kk in range(k):
+                        Xt[:,kk] *= self.computeWeighting(kk, z, weighting, percent)[-1]
+                        if verbose: prog.display()
+                else:
+                    it = [(kk, z, weighting, percent) for kk in range(k)]
+                    with Pool(cpus) as pool:
+                        for kk, w in pool.imap_unordered(self.computeWeighting, it, chunksize=self.__computeCHU__(k, cpus)):
+                            Xt[:,kk] *= w
+                            if verbose: prog.display()
+                    del it
+                
+                if verbose: zm.io.oneLineText('Computing the A matrix and b vector')
                 
                 A = Xt.dot(X)
                 b = Xt.dot(self.db.y)
                 
-                del Xt
-        else:
-            if verbose: zm.io.oneLineText('Computing the A matrix and b vector')
-            A = X.T.dot(X)
-            b = X.T.dot(self.db.y)
+                del Xt, X
+                
+            else:
+                
+                if verbose: zm.io.oneLineText('Computing the A matrix and b vector')
+                
+                A = X.T.dot(X)
+                b = X.T.dot(self.db.y)
+                
+                del X
+            
+        except MemoryError: ## basis function matrix method uses too much memory, must compute A and b manually
+        # else:
+            
+            if verbose:
+                zm.io.oneLineText('Insufficient memory to use Basis Function Matrix')
+                prog = zm.io.oneLineProgress(lenActive**2+lenActive, msg='Computing the A matrix and b vector')
+            
+            A = np.zeros((lenActive,lenActive))
+            b = np.zeros((lenActive,len(iy)))
+            
+            if mp == 1:
+                
+                for row in range(lenActive):
+                    for col in range(lenActive):
+                        A[row,col] = self.createA((row,col,z,weighting,percent))[-1]
+                        if verbose: prog.display()
+                    b[row,:] = self.createB(row,iy,weighting,percent)[-1]
+                    if verbose: prog.display()
+                
+            else:
+                if mp == 0:
+                    cpus = cpu_count()
+                else:
+                    cpus = mp
+                
+                itA = [None]*(lenActive**2)
+                itB = [None]*lenActive
+                i = -1
+                for row in range(lenActive):
+                    for col in range(lenActive):
+                        i += 1
+                        itA[i] = (row, col, z, weighting, percent)
+                    itB[row] = (row, iy, weighting, percent)
+                
+                with Pool(cpus) as pool:
+                    for row, col, val in pool.imap_unordered(self.createA, itA, chunksize=self.__computeCHU__(lenActive**2, cpus)):
+                        A[row,col] = val
+                        if verbose: prog.display()
+                    for row, val in pool.imap_unordered(self.createB, itB, chunksize=self.__computeCHU__(lenActive, cpus)):
+                        b[row,:] = val
+                        if verbose: prog.display()
+                del itA, itB
+        
         
         ## update A and b with the nonzero constraints
         ########################################################################
@@ -653,7 +712,8 @@ class polyFit():
             # loop through the dimensions
             for v in range(self.db.numIndVar):
                 # multiply onto the product series the term
-                prod *= x[v] ** n[v]
+                for _ in range(n[v]): prod *= x[v]
+                # prod *= x[v] ** n[v]
             # add onto the summation the proper term
             f += self.coef[z][j] * prod
         # return the finalized summation value
