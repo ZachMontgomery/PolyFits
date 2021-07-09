@@ -743,7 +743,7 @@ class polyFit():
             ## compute weighting terms
             W = self.kw[z].get('weighting', None)
             P = self.kw[z].get('percent', False)
-            w = np.copy([self.computeWeighting((kk, z, W, P)) for kk in range(self.db.numPoints) if self.db.y[kk,z] != None])
+            w = np.copy([self.computeWeighting((kk, z, W, P))[-1] for kk in range(self.db.numPoints) if self.db.y[kk,z] != None])
             ## calculate the SSt value
             self.St[z] = float(sum( ((ynew - self.ybar[z])*w) ** 2. ))
             
