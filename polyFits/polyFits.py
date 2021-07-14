@@ -35,7 +35,7 @@ class database():
         
         self.name = name
     
-    def myScatterPlotter(self, ax, constraints, iy, avgLines=True, **kwargsScatter):
+    def myScatterPlotter(self, ax, constraints, iy, avgLines=True, tol=1e-6, **kwargsScatter):
         
         if constraints.count(None) != 2: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot')
         
@@ -55,7 +55,7 @@ class database():
             addPoint = True
             for j in range(Ncon):
                 if constraints[j] == None: continue
-                if not zm.nm.isClose(self.x[i,j], constraints[j], tol=1.e-6):
+                if not zm.nm.isClose(self.x[i,j], constraints[j], tol=tol):
                     addPoint = False
                     break
             
@@ -85,11 +85,15 @@ class database():
         xmesh, ymesh = np.meshgrid(ux, uy)
         zmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
         
+        def myIndex(l, v, tol=1e-12):
+            for i,j in enumerate(l):
+                if zm.nm.isClose(j, v, tol=tol): return i
+        
         ## fill in meshes
         for i in range(n):
             px, py, pz = plotx[i], ploty[i], plotz[i]
-            row = uy.index(py)
-            col = ux.index(px)
+            row = myIndex(uy, py)
+            col = myIndex(ux, px)
             zmesh[row, col] = pz
         
         ax.plot_wireframe(xmesh, ymesh, zmesh)#, cmap=cm.coolwarm)
