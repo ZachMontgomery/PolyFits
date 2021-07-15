@@ -35,7 +35,7 @@ class database():
         
         self.name = name
     
-    def myScatterPlotter(self, ax, constraints, iy, avgLines=True, tol=1e-6, **kwargsScatter):
+    def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, **kwargsScatter):
         
         if constraints.count(None) != 2: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot')
         
@@ -49,6 +49,7 @@ class database():
         Ncon = len(constraints)
         
         plotx, ploty, plotz = [], [], []
+        if type(f) != type(None): plotf = []
         
         for i in range(self.numPoints):
             
@@ -64,18 +65,25 @@ class database():
                 plotx.append( self.x[i,I] )
                 ploty.append( self.x[i,J] )
                 plotz.append( self.y[i,iy] )
+                if type(f) != type(None): plotf.append( f[i] )
         
         ########################################################################
         ########################################################################
         ########################################################################
         
         ## find unique points
-        ux, uy, uz = [], [], []
+        ux, uy = [], []
         n = len(plotx)
         for i in plotx:
-            if i not in ux: ux.append(i)
+            flag = True
+            for j in ux:
+                if zm.nm.isClose(i, j, tol=tol): flag = False
+            if flag: ux.append(i)
         for i in ploty:
-            if i not in uy: uy.append(i)
+            flag = True
+            for j in uy:
+                if zm.nm.isClose(i, j, tol=tol): flag = False
+            if flag: uy.append(i)
         
         ## determine range/mesh
         zm.nm.zSort(ux, verbose=False)
@@ -84,6 +92,7 @@ class database():
         j = len(uy)
         xmesh, ymesh = np.meshgrid(ux, uy)
         zmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
+        if type(f) != type(None): fmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
         
         def myIndex(l, v, tol=1e-12):
             for i,j in enumerate(l):
@@ -92,20 +101,27 @@ class database():
         ## fill in meshes
         for i in range(n):
             px, py, pz = plotx[i], ploty[i], plotz[i]
-            row = myIndex(uy, py)
-            col = myIndex(ux, px)
+            row = myIndex(uy, py, tol=tol)
+            col = myIndex(ux, px, tol=tol)
             zmesh[row, col] = pz
+            if type(f) != type(None): fmesh[row, col] = plotf[i]
         
-        ax.plot_wireframe(xmesh, ymesh, zmesh)#, cmap=cm.coolwarm)
+        if wireFrameColors != None:
+            ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
+            if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
+        else:
+            ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
+            if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
         
         ########################################################################
         ########################################################################
         ########################################################################
         
-        ax.scatter(plotx, ploty, plotz, **kwargsScatter)
+        ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
+        if type(f) != type(None): ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
         ax.set_xlabel(self.namesX[I])# labelsI[I])
         ax.set_ylabel(self.namesX[J])
-        ax.set_zlabel(labelD)
+        ax.set_zlabel(self.namesY[iy])
         
         # ax.set_xlim([-0.05,0.05])
         # ax.set_ylim([-0.005,0.005])
@@ -138,6 +154,49 @@ class database():
             ax.plot([minx,maxx], [avgy,avgy], [avgz,avgz], 'r')
             ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
             ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
+        
+        ax.view_init(*view)
+    
+    def plotSnapshot(self, fig, ax, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, **kwargsScatter):
+        if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
+        if type(f) == type(None):
+            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, **kwargsScatter)
+        else:
+            F = np.asarray(f)
+            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, **kwargsScatter)
+        fig.subplots_adjust(**spa)
+    
+    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, **kwargsScatter):
+        if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
+        
+        cont = True
+        while cont:
+            
+            incorrect = True
+            while incorrect:
+                zm.io.text(*self.namesX, title='Choose two variables to hold constant')
+                c1, c2 = input('Enter first variable: '), input('Enter second variable: ')
+                if c1 in self.namesX and c2 in self.namesX and c1 != c2: incorrect = False
+            
+            C = [c1, c2]
+            ii = [self.namesX.index(c1), self.namesX.index(c2)]
+            Consts = [None]*self.numIndVar
+            vals = [None]*2
+            for i in range(2):
+                vals[i] = float(input('Choose a value for {}: '.format(C[i])))
+                Consts[ii[i]] = vals[i]
+            
+            ele = float(input('Enter elevation in degrees: '))
+            rot = float(input('Enter rotaion in degrees: '))
+            
+            for i in ax: i.cla()
+            
+            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], **kwargsScatter)
+            
+            fig.suptitle('{} = {}, {} = {}'.format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
+            
+            if input('Plot again (y/n)? ').lower() == 'n': cont = False
+    
 
 class polyFit():
     
@@ -335,11 +394,14 @@ class polyFit():
         ## check if number of inputs is one
         if len(args) == 1:
             self.readPolyFitsFromFiles(args[0], verbose=verbose)
+            self.c = c
         else:
             db, kw = args
             
             ## copy in database
             self.db = db
+            
+            self.c = c
             
             ## create array for polynomial values corresponding to the db values
             self.f = np.zeros((self.db.numPoints, self.db.numDepVar)) * np.nan
@@ -409,11 +471,11 @@ class polyFit():
             if mpFits == 1:
                 ## perform the manual fits
                 for dupFit in self.duplicateManFits:
-                    if verbose: zm.io.text('Performing manual fit(s) for:', *['{}'.format(self.db.namesY[i]) for i in dupFit], c=c)
+                    if verbose: zm.io.text('Performing manual fit(s) for:', *['{}'.format(self.db.namesY[i]) for i in dupFit], c=self.c)
                     self.manFit(dupFit)
                 ## peform the auto fits
                 for i in autoFits:
-                    if verbose: zm.io.text('Performing auto fit for {}'.format(self.db.namesY[i]), c=c)
+                    if verbose: zm.io.text('Performing auto fit for {}'.format(self.db.namesY[i]), c=self.c)
                     self.autoFit(i)
             else: ## perfoming the fits simultanuously with multiprocessing
                 ## disable the multiprocessing option for all fits and verbosity
@@ -431,7 +493,7 @@ class polyFit():
                 ## check if using the same numer of cpus as on the current machine
                 if mpFits == 0: mpFits = cpu_count()
                 ## initialize progress bar
-                if verbose: prog = zm.io.Progress(len(it), title='Performing fits for {}'.format(self.db.name), c=c)
+                if verbose: prog = zm.io.Progress(len(it), title='Performing fits for {}'.format(self.db.name), c=self.c)
                 ## perform the fits
                 with Pool(mpFits) as pool:
                     for _ in pool.imap_unordered(self.whichFit, it):
@@ -593,7 +655,7 @@ class polyFit():
             b = np.zeros((lenActive, len(iy)))
             
             ## set progress bar
-            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions', c=c)
+            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions')
             
             if mp == 1:
                 ## loop thru data points
@@ -627,7 +689,7 @@ class polyFit():
             
             if callable(weighting) or percent:
                 Xt = X.T.copy()
-                if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors', c=c)
+                if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors')
                 if mp == 1:
                     for kk in range(k):
                         Xt[:,kk] *= self.computeWeighting((kk, z, weighting, percent))[-1]
@@ -640,7 +702,7 @@ class polyFit():
                             if verbose: prog.display()
                     del it
                 
-                if verbose: zm.io.oneLineText('Computing the A matrix and b vector', c=c)
+                if verbose: zm.io.oneLineText('Computing the A matrix and b vector', c=self.c)
                 
                 A = Xt.dot(X)
                 b = Xt.dot(self.db.y)
@@ -649,7 +711,7 @@ class polyFit():
                 
             else:
                 
-                if verbose: zm.io.oneLineText('Computing the A matrix and b vector', c=c)
+                if verbose: zm.io.oneLineText('Computing the A matrix and b vector', c=self.c)
                 
                 A = X.T.dot(X)
                 b = X.T.dot(self.db.y)
@@ -660,8 +722,8 @@ class polyFit():
         # else:
             
             if verbose:
-                zm.io.oneLineText('Insufficient memory to use Basis Function Matrix', c=c)
-                prog = zm.io.oneLineProgress(lenActive**2+lenActive, msg='Computing the A matrix and b vector', c=c)
+                zm.io.oneLineText('Insufficient memory to use Basis Function Matrix', c=self.c)
+                prog = zm.io.oneLineProgress(lenActive**2+lenActive, msg='Computing the A matrix and b vector')
             
             A = np.zeros((lenActive,lenActive))
             b = np.zeros((lenActive,len(iy)))
@@ -716,7 +778,7 @@ class polyFit():
         
         ## solve for the polynomial coefficients
         ########################################################################
-        if verbose: zm.io.oneLineText('solving the Aa=b equation', c=c)
+        if verbose: zm.io.oneLineText('solving the Aa=b equation', c=self.c)
         a = np.linalg.solve(A,b)
         
         ## extract coefficinets
@@ -752,7 +814,7 @@ class polyFit():
             self.St[z] = float(sum( ((ynew - self.ybar[z])*w) ** 2. ))
             
             ## loop through the datapoints
-            if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]), c=c)
+            if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]))
             
             if mp == 1:
                 for i in range(self.db.numPoints):
@@ -927,7 +989,7 @@ class polyFit():
                             'RMSN = {}'.format(self.RMSN[z]),
                             'Syx = {}'.format(self.Syx[z])]
         if self.auto[z]: msg.insert(0, 'Nvec = {}'.format(self.Nvec[z]))
-        return zm.io.text(msg, p2s=False, title=self.db.namesY[z], c=c)
+        return zm.io.text(msg, p2s=False, title=self.db.namesY[z], c=self.c)
     
     def __str__(self):
         s = ''
@@ -1039,7 +1101,7 @@ class polyFit():
         K = self.kCompose(Nvec)
         ###################################################################
         ##           determine the orthogonal p functions
-        if verbose: prog = zm.io.oneLineProgress(K-1, msg='Determining the orthogonal p functions', c=c)
+        if verbose: prog = zm.io.oneLineProgress(K-1, msg='Determining the orthogonal p functions')
         ## initialize the P matrix
         P = np.zeros((N, K))
         P[:,0] = 1.
@@ -1087,14 +1149,14 @@ class polyFit():
             pjdot = np.dot(pj, pj)
             ajhat = np.dot(pj, self.db.y[:,z]) / pjdot
             ranks[i] = ajhat ** 2. * pjdot
-        zm.nm.zSort(ranks, order, ascend=False, msg='Sorting the p functions by effectivenss', verbose=verbose, c=c)
+        zm.nm.zSort(ranks, order, ascend=False, msg='Sorting the p functions by effectivenss', verbose=verbose, c=self.c)
         Pordered = np.zeros((N,K))
         for i,o in enumerate(order):
             Pordered[:,i] = P[:,o]
         P = Pordered[:,:]
         ###################################################################
         ##          determine how many of the orthogonal p functions to use
-        if verbose: prog = zm.io.oneLineProgress(K, msg='Determining number of p functions to use', c=c)
+        if verbose: prog = zm.io.oneLineProgress(K, msg='Determining number of p functions to use')
         PSEold = None
         foundMin = False
         if sigma == None:
@@ -1126,7 +1188,7 @@ class polyFit():
             nn = K
         ###################################################################
         ##              final coefficients and polynomial size
-        if verbose: prog = zm.io.oneLineProgress(4+nn, msg='Determining final coefficients and polynomial size', c=c)
+        if verbose: prog = zm.io.oneLineProgress(4+nn, msg='Determining final coefficients and polynomial size')
         b = np.zeros((nn,nn))
         for k in range(1,nn+1):
             j = k - 1
@@ -1238,7 +1300,7 @@ class polyFit():
         namesY = []
         self.numCoef = []
         
-        if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files', c=c)
+        if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files')
         
         for fn in os.listdir():
             

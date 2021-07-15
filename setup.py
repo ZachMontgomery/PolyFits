@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name = 'polyFits',
-    version = '1.0.0',
+    version = '1.1.0',
     author = 'Zach Montgomery',
     author_email = 'zachary.s.montgomery@gmail.com',
     description = 'Multivariable Polynomial Curve Fitting',
