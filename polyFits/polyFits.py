@@ -35,7 +35,7 @@ class database():
         
         self.name = name
     
-    def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, **kwargsScatter):
+    def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, thinning=None, **kwargsScatter):
         
         if constraints.count(None) != 2: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot')
         
@@ -48,30 +48,23 @@ class database():
         
         Ncon = len(constraints)
         
+        ## collect all the points that meet the constraints
         plotx, ploty, plotz = [], [], []
         if type(f) != type(None): plotf = []
-        
         for i in range(self.numPoints):
-            
             addPoint = True
             for j in range(Ncon):
                 if constraints[j] == None: continue
                 if not zm.nm.isClose(self.x[i,j], constraints[j], tol=tol):
                     addPoint = False
                     break
-            
             if addPoint:
-                
                 plotx.append( self.x[i,I] )
                 ploty.append( self.x[i,J] )
                 plotz.append( self.y[i,iy] )
                 if type(f) != type(None): plotf.append( f[i] )
         
-        ########################################################################
-        ########################################################################
-        ########################################################################
-        
-        ## find unique points
+        ## find unique points along the two independent variable directions
         ux, uy = [], []
         n = len(plotx)
         for i in plotx:
@@ -85,9 +78,47 @@ class database():
                 if zm.nm.isClose(i, j, tol=tol): flag = False
             if flag: uy.append(i)
         
-        ## determine range/mesh
+        ## sort the unique point arrays
         zm.nm.zSort(ux, verbose=False)
         zm.nm.zSort(uy, verbose=False)
+        i = len(ux)
+        j = len(uy)
+        
+        ## thin the data if needed
+        if thinning == None: thinning = max(i,j)
+        if i > thinning:
+            diff = i - thinning
+            if diff % 2 == 1: diff -= 1
+            # if diff == 0: diff = 2
+            diff += 2
+            rpX = [int(round(ind)) for ind in np.linspace(i-1,0,diff)][1:-1]
+            for ind in rpX: ux.pop(ind)
+        if j > thinning:
+            diff = j - thinning
+            if diff % 2 == 1: diff -= 1
+            diff += 2
+            rpY = [int(round(ind)) for ind in np.linspace(j-1,0,diff)][1:-1]
+            for ind in rpY: uy.pop(ind)
+        
+        ## remove the thinned out points from plot arrays
+        for i in range(len(plotx)-1,-1,-1):
+            flag = [True, True]
+            for j in range(len(ux)):
+                if zm.nm.isClose(plotx[i], ux[j], tol=tol):
+                    flag[0] = False
+                    break
+            for j in range(len(uy)):
+                if zm.nm.isClose(ploty[i], uy[j], tol=tol):
+                    flag[1] = False
+                    break
+            if flag[0] or flag[1]:
+                plotx.pop(i)
+                ploty.pop(i)
+                plotz.pop(i)
+                if type(f) != type(None): plotf.pop(i)
+        n = len(plotx)
+        
+        ## setup meshes
         i = len(ux)
         j = len(uy)
         xmesh, ymesh = np.meshgrid(ux, uy)
@@ -103,9 +134,11 @@ class database():
             px, py, pz = plotx[i], ploty[i], plotz[i]
             row = myIndex(uy, py, tol=tol)
             col = myIndex(ux, px, tol=tol)
+            # if None in (row, col): continue
             zmesh[row, col] = pz
             if type(f) != type(None): fmesh[row, col] = plotf[i]
         
+        ## plot the wireframes
         if wireFrameColors != None:
             ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
             if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
@@ -113,18 +146,14 @@ class database():
             ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
             if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
         
-        ########################################################################
-        ########################################################################
-        ########################################################################
-        
+        ## plot the scatter points
         ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
         if type(f) != type(None): ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
         ax.set_xlabel(self.namesX[I])# labelsI[I])
         ax.set_ylabel(self.namesX[J])
         ax.set_zlabel(self.namesY[iy])
         
-        # ax.set_xlim([-0.05,0.05])
-        # ax.set_ylim([-0.005,0.005])
+        ## put on the avg lines
         if avgLines:
             if len(plotx) != 0:
                 avgx = sum(plotx) / len(plotx)
@@ -155,18 +184,19 @@ class database():
             ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
             ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
         
+        ## update the view angle
         ax.view_init(*view)
     
-    def plotSnapshot(self, fig, ax, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, **kwargsScatter):
+    def plotSnapshot(self, fig, ax, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, **kwargsScatter):
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
         if type(f) == type(None):
-            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, **kwargsScatter)
+            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
         else:
             F = np.asarray(f)
-            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, **kwargsScatter)
+            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
         fig.subplots_adjust(**spa)
     
-    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, **kwargsScatter):
+    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, thinning=None, **kwargsScatter):
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
         
         cont = True
@@ -175,7 +205,7 @@ class database():
             incorrect = True
             while incorrect:
                 zm.io.text(*self.namesX, title='Choose two variables to hold constant')
-                c1, c2 = input('Enter first variable: '), input('Enter second variable: ')
+                c1, c2 = input('Enter first variable:  '), input('Enter second variable: ')
                 if c1 in self.namesX and c2 in self.namesX and c1 != c2: incorrect = False
             
             C = [c1, c2]
@@ -191,7 +221,7 @@ class database():
             
             for i in ax: i.cla()
             
-            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], **kwargsScatter)
+            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thinning, **kwargsScatter)
             
             fig.suptitle('{} = {}, {} = {}'.format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
