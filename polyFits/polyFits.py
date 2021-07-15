@@ -630,7 +630,7 @@ class polyFit():
                 if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors')
                 if mp == 1:
                     for kk in range(k):
-                        Xt[:,kk] *= self.computeWeighting(kk, z, weighting, percent)[-1]
+                        Xt[:,kk] *= self.computeWeighting((kk, z, weighting, percent))[-1]
                         if verbose: prog.display()
                 else:
                     it = [(kk, z, weighting, percent) for kk in range(k)]
