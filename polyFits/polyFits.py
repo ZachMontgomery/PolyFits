@@ -196,8 +196,11 @@ class database():
             for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
         fig.subplots_adjust(**spa)
     
-    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, thinning=None, **kwargsScatter):
+    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, tol=1e-6, **kwargsScatter):
+        
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
+        
+        prec = str(int(abs(np.floor(np.log10(tol)))))
         
         cont = True
         while cont:
@@ -208,24 +211,45 @@ class database():
                 c1, c2 = input('Enter first variable:  '), input('Enter second variable: ')
                 if c1 in self.namesX and c2 in self.namesX and c1 != c2: incorrect = False
             
+            print()
             C = [c1, c2]
             ii = [self.namesX.index(c1), self.namesX.index(c2)]
             Consts = [None]*self.numIndVar
             vals = [None]*2
+            
             for i in range(2):
+                
+                ## find unique points along the two independent variable directions
+                u = []
+                for I in self.x[:,ii[i]]:
+                    flag = True
+                    for j in u:
+                        if zm.nm.isClose(I, j, tol=tol): flag = False
+                    if flag: u.append(I)
+                ## sort the unique point arrays
+                zm.nm.zSort(u, verbose=False)
+                
+                print('Unique {} values in database:'.format(C[i]))
+                print((('  {:.'+prec+'f}')*len(u)).format(*u))
                 vals[i] = float(input('Choose a value for {}: '.format(C[i])))
                 Consts[ii[i]] = vals[i]
+                print()
             
             ele = float(input('Enter elevation in degrees: '))
             rot = float(input('Enter rotaion in degrees: '))
+            print()
+            
+            thin = int(input('Enter desired number of points along each dimension to plot, 0 for all points: '))
+            if thin == 0: thin = None
             
             for i in ax: i.cla()
             
-            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thinning, **kwargsScatter)
+            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, **kwargsScatter)
             
             fig.suptitle('{} = {}, {} = {}'.format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
             if input('Plot again (y/n)? ').lower() == 'n': cont = False
+            print()
     
 
 class polyFit():
