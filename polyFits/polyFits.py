@@ -242,8 +242,8 @@ class database():
                 Consts[ii[i]] = vals[i]
                 print()
             
-            ele = float(input('Enter elevation in degrees: '))
-            rot = float(input('Enter rotaion in degrees: '))
+            ele = float(input('Enter elevation view angle for the plot(s) in degrees: '))
+            rot = float(input('Enter rotaion view angle for the plot(s) in degrees:   '))
             print()
             
             thin = int(input('Enter desired number of points along each dimension to plot, 0 for all points: '))
