@@ -195,6 +195,11 @@ class database():
             F = np.asarray(f)
             for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
         fig.subplots_adjust(**spa)
+        numConstVar = self.numIndVar - 2
+        ii = [i for i,j in enumerate(constraints) if j != None]
+        C = [self.namesX[i] for i in ii]
+        vals = [constraints[i] for i in ii]
+        fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))
     
     def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, tol=1e-6, **kwargsScatter):
         
@@ -253,7 +258,7 @@ class database():
             
             self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, **kwargsScatter)
             
-            fig.suptitle('{} = {}, {} = {}'.format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
+            fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
             if input('Plot again (y/n)? ').lower() == 'n': cont = False
             print()
