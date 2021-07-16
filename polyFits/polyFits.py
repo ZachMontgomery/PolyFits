@@ -202,24 +202,31 @@ class database():
         
         prec = str(int(abs(np.floor(np.log10(tol)))))
         
+        numConstVar = self.numIndVar - 2
+        
         cont = True
         while cont:
             
-            incorrect = True
-            while incorrect:
-                zm.io.text(*self.namesX, title='Choose two variables to hold constant')
-                c1, c2 = input('Enter first variable:  '), input('Enter second variable: ')
-                if c1 in self.namesX and c2 in self.namesX and c1 != c2: incorrect = False
-            
+            C = []
+            if numConstVar > 0: zm.io.text(*self.namesX, title='Choose {} variables to hold constant'.format(numConstVar))
+            while len(C) != numConstVar:
+                incorrect = True
+                while incorrect:
+                    c = input('Enter variable:  ')
+                    if c in self.namesX and c not in C:
+                        incorrect = False
+                    else:
+                        print('invalid entry, try again')
+                C.append(c)
             print()
-            C = [c1, c2]
-            ii = [self.namesX.index(c1), self.namesX.index(c2)]
-            Consts = [None]*self.numIndVar
-            vals = [None]*2
             
-            for i in range(2):
+            ii = [self.namesX.index(c) for c in C]
+            Consts = [None]*self.numIndVar
+            vals = [None]*numConstVar
+            
+            for i in range(numConstVar):
                 
-                ## find unique points along the two independent variable directions
+                ## find unique points along the independent variable direction
                 u = []
                 for I in self.x[:,ii[i]]:
                     flag = True
