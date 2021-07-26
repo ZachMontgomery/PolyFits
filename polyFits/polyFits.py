@@ -138,54 +138,74 @@ class database():
             zmesh[row, col] = pz
             if type(f) != type(None): fmesh[row, col] = plotf[i]
         
-        ## plot the wireframes
-        if wireFrameColors != None:
-            ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
-            if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
-        else:
-            ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
-            if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
-        
-        ## plot the scatter points
-        ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
-        if type(f) != type(None): ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
-        ax.set_xlabel(self.namesX[I])# labelsI[I])
-        ax.set_ylabel(self.namesX[J])
-        ax.set_zlabel(self.namesY[iy])
-        
-        ## put on the avg lines
-        if avgLines:
-            if len(plotx) != 0:
-                avgx = sum(plotx) / len(plotx)
-                minx = min(plotx)
-                maxx = max(plotx)
-            else:
-                avgx = 0.
-                minx = 0.
-                maxx = 0.
-            if len(ploty) != 0:
-                avgy = sum(ploty) / len(ploty)
-                miny = min(ploty)
-                maxy = max(ploty)
-            else:
-                avgy = 0.
-                miny = 0.
-                maxy = 0.
-            if len(plotz) != 0:
-                avgz = sum(plotz) / len(plotz)
-                minz = min(plotz)
-                maxz = max(plotz)
-            else:
-                avgz = 0.
-                minz = 0.
-                maxz = 0.
+        if hasattr(ax, 'get_zlim'):
             
-            ax.plot([minx,maxx], [avgy,avgy], [avgz,avgz], 'r')
-            ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
-            ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
-        
-        ## update the view angle
-        ax.view_init(*view)
+            ## plot the wireframes
+            if wireFrameColors != None:
+                ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
+                if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
+            else:
+                ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
+                if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
+            
+            ## plot the scatter points
+            ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
+            if type(f) != type(None): ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
+            ax.set_xlabel(self.namesX[I])# labelsI[I])
+            ax.set_ylabel(self.namesX[J])
+            ax.set_zlabel(self.namesY[iy])
+            
+            ## put on the avg lines
+            if avgLines:
+                if len(plotx) != 0:
+                    avgx = sum(plotx) / len(plotx)
+                    minx = min(plotx)
+                    maxx = max(plotx)
+                else:
+                    avgx = 0.
+                    minx = 0.
+                    maxx = 0.
+                if len(ploty) != 0:
+                    avgy = sum(ploty) / len(ploty)
+                    miny = min(ploty)
+                    maxy = max(ploty)
+                else:
+                    avgy = 0.
+                    miny = 0.
+                    maxy = 0.
+                if len(plotz) != 0:
+                    avgz = sum(plotz) / len(plotz)
+                    minz = min(plotz)
+                    maxz = max(plotz)
+                else:
+                    avgz = 0.
+                    minz = 0.
+                    maxz = 0.
+                
+                ax.plot([minx,maxx], [avgy,avgy], [avgz,avgz], 'r')
+                ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
+                ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
+            
+            ## update the view angle
+            ax.view_init(*view)
+            
+        else:
+            
+            zctr = ax.contour(xmesh, ymesh, zmesh, colors='black', linestyles='solid', **kwargsScatter)
+            # zcbar = zm.plt.colorbar(zctr, ax=ax)
+            # zcbar.ax.set_ylabel(self.namesY[iy])
+            ax.clabel(zctr)
+            
+            ax.set_xlabel(self.namesX[I])# labelsI[I])
+            ax.set_ylabel(self.namesX[J])
+            ax.set_title(self.namesY[iy])
+            
+            if type(f) != type(None):
+                fctr = ax.contour(xmesh, ymesh, fmesh, zctr.levels, colors='black', linestyles='dashdot', alpha=0.8)
+                # fcbar = zm.plt.colorbar(fctr, ax=ax)
+                # ax.clabel(fctr)
+            
+            
     
     def plotSnapshot(self, fig, ax, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, **kwargsScatter):
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
@@ -194,12 +214,15 @@ class database():
         else:
             F = np.asarray(f)
             for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
-        fig.subplots_adjust(**spa)
         numConstVar = self.numIndVar - 2
         ii = [i for i,j in enumerate(constraints) if j != None]
         C = [self.namesX[i] for i in ii]
         vals = [constraints[i] for i in ii]
         fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))
+        if spa != {}:
+            fig.subplots_adjust(**spa)
+        else:
+            fig.tight_layout()
     
     def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, tol=1e-6, **kwargsScatter):
         
@@ -247,18 +270,28 @@ class database():
                 Consts[ii[i]] = vals[i]
                 print()
             
-            ele = float(input('Enter elevation view angle for the plot(s) in degrees: '))
-            rot = float(input('Enter rotaion view angle for the plot(s) in degrees:   '))
-            print()
-            
-            thin = int(input('Enter desired number of points along each dimension to plot, 0 for all points: '))
+            if hasattr(ax[0], 'get_zlim'):
+                
+                ele = float(input('Enter elevation view angle for the plot(s) in degrees: '))
+                rot = float(input('Enter rotaion view angle for the plot(s) in degrees:   '))
+                print()
+                
+                thin = int(input('Enter desired number of points along each dimension to plot, 0 for all points: '))
+                
+            else:
+                ele = rot = thin = 0
             if thin == 0: thin = None
+            # axTemp = fig.axes
+            # print(len(ax), len(axTemp))
+            # for i in range(len(ax),len(axTemp)): axTemp[i].remove()
+            
+            # print(len(fig.axes))
             
             for i in ax: i.cla()
             
             self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, **kwargsScatter)
             
-            fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
+            # fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
             if input('Plot again (y/n)? ').lower() == 'n': cont = False
             print()
