@@ -638,9 +638,9 @@ class polyFit():
         return kk, w
     
     def __computeCHU__(self, n, cpus):
-        chu = n // cpus // 5
+        chu = n // cpus // 4
         # chu = 1
-        if chu > 8000: return 8000
+        # if chu > 8000: return 8000
         if chu < 1: return 1
         return chu
     
