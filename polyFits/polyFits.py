@@ -85,42 +85,44 @@ class database():
         j = len(uy)
         
         ## thin the data if needed
-        if thinning == None: thinning = max(i,j)
-        if i > thinning:
-            diff = i - thinning
-            if diff % 2 == 1: diff -= 1
-            # if diff == 0: diff = 2
-            diff += 2
-            rpX = [int(round(ind)) for ind in np.linspace(i-1,0,diff)][1:-1]
-            for ind in rpX: ux.pop(ind)
-        if j > thinning:
-            diff = j - thinning
-            if diff % 2 == 1: diff -= 1
-            diff += 2
-            rpY = [int(round(ind)) for ind in np.linspace(j-1,0,diff)][1:-1]
-            for ind in rpY: uy.pop(ind)
+        if thinning != None:
+            if i > thinning:
+                diff = i - thinning
+                if diff % 2 == 1: diff -= 1
+                # if diff == 0: diff = 2
+                diff += 2
+                rpX = [int(round(ind)) for ind in np.linspace(i-1,0,diff)][1:-1]
+                for ind in rpX: ux.pop(ind)
+            if j > thinning:
+                diff = j - thinning
+                if diff % 2 == 1: diff -= 1
+                diff += 2
+                rpY = [int(round(ind)) for ind in np.linspace(j-1,0,diff)][1:-1]
+                for ind in rpY: uy.pop(ind)
+            
+            ## remove the thinned out points from plot arrays
+            for i in range(len(plotx)-1,-1,-1):
+                flag = [True, True]
+                for j in range(len(ux)):
+                    if zm.nm.isClose(plotx[i], ux[j], tol=tol):
+                        flag[0] = False
+                        break
+                for j in range(len(uy)):
+                    if zm.nm.isClose(ploty[i], uy[j], tol=tol):
+                        flag[1] = False
+                        break
+                if flag[0] or flag[1]:
+                    plotx.pop(i)
+                    ploty.pop(i)
+                    plotz.pop(i)
+                    if type(f) != type(None): plotf.pop(i)
         
-        ## remove the thinned out points from plot arrays
-        for i in range(len(plotx)-1,-1,-1):
-            flag = [True, True]
-            for j in range(len(ux)):
-                if zm.nm.isClose(plotx[i], ux[j], tol=tol):
-                    flag[0] = False
-                    break
-            for j in range(len(uy)):
-                if zm.nm.isClose(ploty[i], uy[j], tol=tol):
-                    flag[1] = False
-                    break
-            if flag[0] or flag[1]:
-                plotx.pop(i)
-                ploty.pop(i)
-                plotz.pop(i)
-                if type(f) != type(None): plotf.pop(i)
         n = len(plotx)
         
         ## setup meshes
         i = len(ux)
         j = len(uy)
+        
         xmesh, ymesh = np.meshgrid(ux, uy)
         zmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
         if type(f) != type(None): fmesh = np.array([[None for _ in range(i)] for _ in range(j)], dtype=float)
@@ -191,7 +193,9 @@ class database():
             
         else:
             
-            zctr = ax.contour(xmesh, ymesh, zmesh, colors='black', linestyles='solid', **kwargsScatter)
+            levels = [-20, -15, -10, -5, 0, 5, 10, 15, 20]
+            
+            zctr = ax.contourf(xmesh, ymesh, zmesh, levels, linestyles='solid', **kwargsScatter)
             # zcbar = zm.plt.colorbar(zctr, ax=ax)
             # zcbar.ax.set_ylabel(self.namesY[iy])
             ax.clabel(zctr)
@@ -201,7 +205,7 @@ class database():
             ax.set_title(self.namesY[iy])
             
             if type(f) != type(None):
-                fctr = ax.contour(xmesh, ymesh, fmesh, zctr.levels, colors='black', linestyles='dashdot', alpha=0.8)
+                fctr = ax.contour(xmesh, ymesh, fmesh, zctr.levels, linestyles='dashdot', alpha=0.8)
                 # fcbar = zm.plt.colorbar(fctr, ax=ax)
                 # ax.clabel(fctr)
             
@@ -634,7 +638,7 @@ class polyFit():
         return kk, w
     
     def __computeCHU__(self, n, cpus):
-        chu = n // cpus // 20
+        chu = n // cpus // 5
         # chu = 1
         if chu > 8000: return 8000
         if chu < 1: return 1
