@@ -687,6 +687,7 @@ class polyFit():
         weighting       = self.kw[z].get('weighting', None)
         mp              = self.kw[z].get('mp', cpu_count())
         verbose         = self.kw[z].get('verbose', True)
+        saveMemory      = self.kw[z].get('saveMemory', False)
         
         ## set global variables numCoef and Nvec
         self.numCoef[iy,] = J = self.calcNumCoef(Nvec)
@@ -751,7 +752,7 @@ class polyFit():
         ########################################################################
         ## attempt to use the basis functions matrix
         try:
-        # if False:
+            if saveMemory: raise MemoryError
             X = np.zeros((k,lenActive))
             if callable(weighting) or percent: Xt = X.T.copy()
             A = np.zeros((lenActive,lenActive))
