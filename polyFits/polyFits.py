@@ -638,9 +638,9 @@ class polyFit():
         return kk, w
     
     def __computeCHU__(self, n, cpus):
-        chu = n // cpus // 4
-        # chu = 1
-        # if chu > 8000: return 8000
+        chu = n // cpus // 20
+        # chu = 10
+        if chu > 8000: return 8000
         if chu < 1: return 1
         return chu
     
@@ -651,7 +651,7 @@ class polyFit():
         nc = self.decompose_j(c, self.Nvec[z])
         n = [nr[i] + nc[i] for i in range(self.db.numIndVar)]
         for kk in range(self.db.numPoints):
-            t = self.computeWeighting(kk, z, w, p)[-1]
+            t = self.computeWeighting((kk, z, w, p))[-1]
             for v in range(self.db.numIndVar):
                 for _ in range(n[v]): t *= self.db.x[kk,v]
             a += t
@@ -663,7 +663,7 @@ class polyFit():
         nr = self.decompose_j(r, self.Nvec[iy[0]])
         for ib,z in enumerate(iy):
             for kk in range(self.db.numPoints):
-                t = self.computeWeighting(kk, z, w, p)[-1] * self.db.y[kk,z]
+                t = self.computeWeighting((kk, z, w, p))[-1] * self.db.y[kk,z]
                 for v in range(self.db.numIndVar):
                     for _ in range(nr[v]): t *= self.db.x[kk,v]
                 b[ib] += t
