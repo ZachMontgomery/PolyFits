@@ -1336,6 +1336,7 @@ class polyFit():
         
         self.coef[z] = a[:]
         self.Nvec[z] = nvec[:]
+        self.numCoef[z] = self.calcNumCoef(nvec)
         
         self.goodnessParams(mp, (z,), verbose=verbose)
     
