@@ -1194,7 +1194,7 @@ class polyFit():
         sigma           = self.kw[z].get('sigma', None)
         sigmaMultiplier = self.kw[z].get('sigmaMultiplier', 1.)
         verbose         = self.kw[z].get('verbose', True)
-        mp              = self.kw[z].get('mp', 1)
+        mp              = self.kw[z].get('mp', 0)
         
         m = self.db.numIndVar
         ## max range of polynomials to try
