@@ -759,7 +759,7 @@ class polyFit():
             b = np.zeros((lenActive, len(iy)))
             
             ## set progress bar
-            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions')
+            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions', c = self.c)
             
             if mp == 1:
                 ## loop thru data points
@@ -793,7 +793,7 @@ class polyFit():
             
             if callable(weighting) or percent:
                 Xt = X.T.copy()
-                if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors')
+                if verbose: prog = zm.io.oneLineProgress(k, msg='Setting up weighting factors', c = self.c)
                 if mp == 1:
                     for kk in range(k):
                         Xt[:,kk] *= self.computeWeighting((kk, z, weighting, percent))[-1]
@@ -827,7 +827,7 @@ class polyFit():
             
             if verbose:
                 zm.io.oneLineText('Insufficient memory to use Basis Function Matrix', c=self.c)
-                prog = zm.io.oneLineProgress(lenActive**2+lenActive, msg='Computing the A matrix and b vector')
+                prog = zm.io.oneLineProgress(lenActive**2+lenActive, msg='Computing the A matrix and b vector', c = self.c)
             
             A = np.zeros((lenActive,lenActive))
             b = np.zeros((lenActive,len(iy)))
@@ -918,7 +918,7 @@ class polyFit():
             self.St[z] = float(sum( ((ynew - self.ybar[z])*w) ** 2. ))
             
             ## loop through the datapoints
-            if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]))
+            if verbose: prog = zm.io.oneLineProgress(k, msg='Evaluating Fit Parameters for {}'.format(self.db.namesY[z]), c = self.c)
             
             if mp == 1:
                 for i in range(self.db.numPoints):
@@ -1205,7 +1205,7 @@ class polyFit():
         K = self.kCompose(Nvec)
         ###################################################################
         ##           determine the orthogonal p functions
-        if verbose: prog = zm.io.oneLineProgress(K-1, msg='Determining the orthogonal p functions')
+        if verbose: prog = zm.io.oneLineProgress(K-1, msg='Determining the orthogonal p functions', c = self.c)
         ## initialize the P matrix
         P = np.zeros((N, K))
         P[:,0] = 1.
@@ -1260,7 +1260,7 @@ class polyFit():
         P = Pordered[:,:]
         ###################################################################
         ##          determine how many of the orthogonal p functions to use
-        if verbose: prog = zm.io.oneLineProgress(K, msg='Determining number of p functions to use')
+        if verbose: prog = zm.io.oneLineProgress(K, msg='Determining number of p functions to use', c = self.c)
         PSEold = None
         foundMin = False
         if sigma == None:
@@ -1292,7 +1292,7 @@ class polyFit():
             nn = K
         ###################################################################
         ##              final coefficients and polynomial size
-        if verbose: prog = zm.io.oneLineProgress(4+nn, msg='Determining final coefficients and polynomial size')
+        if verbose: prog = zm.io.oneLineProgress(4+nn, msg='Determining final coefficients and polynomial size', c = self.c)
         b = np.zeros((nn,nn))
         for k in range(1,nn+1):
             j = k - 1
@@ -1405,7 +1405,7 @@ class polyFit():
         namesY = []
         self.numCoef = []
         
-        if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files')
+        if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files', c = self.c)
         
         for fn in os.listdir():
             
