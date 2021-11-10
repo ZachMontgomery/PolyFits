@@ -496,8 +496,8 @@ class polyFit():
         
         ## check if number of inputs is one
         if len(args) == 1:
-            self.readPolyFitsFromFiles(args[0], verbose=verbose)
             self.c = c
+            self.readPolyFitsFromFiles(args[0], verbose=verbose)
         else:
             db, kw = args
             
