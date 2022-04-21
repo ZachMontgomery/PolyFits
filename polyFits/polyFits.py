@@ -1459,6 +1459,106 @@ class polyFit():
         self.auto = [False if 'Nvec' in self.kw[i] else True for i in range(self.db.numDepVar)]
     
     
+    def writeHardCodedEqs(self, **kws):
+        
+        namesX = kws.get('namesX', self.db.namesX)
+        namesY = kws.get('namesY', self.db.namesY)
+        name   = kws.get('name'  , self.db.name)
+        
+        
+        tab = ' '*4
+        nl = '\n'
+        
+        s = ''
+        
+        for i in range(self.db.numDepVar):
+            
+            s += nl*2 + 'def evaluate_' + namesY[i] + '('+('{}, '*self.db.numIndVar).format(*[v+'1' for v in namesX])+'):' + nl
+            
+            
+            s += tab + ('{} = '*self.db.numIndVar).format(*[v+'0' for v in namesX]) + '1.0' + nl
+            
+            for v in range(self.db.numIndVar):
+                if self.Nvec[i][v] > 1:
+                    s += tab + nl
+                    for j in range(2, self.Nvec[i][v]+1):
+                        s += tab + '{0}{1} = {0}{2} * {0}1'.format(namesX[v], j, j-1)+nl
+            
+            s += tab + nl
+            
+            s += tab + 'return (' + nl
+            
+            
+            D = {}
+            
+            for j in range(self.numCoef[i]):
+                
+                if self.coef[i][j] == 0.: continue
+                
+                n = self.decompose_j(j, self.Nvec[i])
+                
+                keys = [v+str(w) for v,w in zip(namesX, n)]
+                
+                zm.misc.nestedDictAssign(D, keys, self.coef[i][j])
+                
+            
+            reducedNvec = [j for j in self.Nvec[i][:-1]]
+            
+            n0 = [None] * (self.db.numIndVar-1)
+            
+            # keys = []
+            # p = 0
+            
+            for j in range(self.calcNumCoef(reducedNvec)):
+                
+                n = self.decompose_j(j, reducedNvec)
+                
+                # print(n0, n)
+                
+                # input()
+                
+                keys = [v+str(w) for v,w in zip(namesX[:-1], n)]
+                d = zm.misc.nestedDictGet(D, keys)
+                keys = [k for k in d]
+                
+                if len(keys) == 0:
+                    # n0 = n[:]
+                    continue
+                elif n0[0] != None:
+                    m = sum([1 for k in range(len(n0)-1) if n0[k] != n[k]])
+                    # print(m)
+                    s += ')'*m + ' +' + nl
+                
+                t = tab*2
+                
+                flag = False
+                for k in range(self.db.numIndVar-1):
+                    
+                    if flag or n[k] != n0[k]:
+                        t += '{}{} * ('.format(namesX[k], n[k])
+                        # p += 1
+                        flag = True
+                    else:
+                        t += ' '*(len(namesX[k]) + len(str(n[k])) + 4)
+                
+                s += t + keys[0] + ' * {}'.format(d[keys[0]])
+                
+                t = ' '*len(t)
+                for key in keys[1:]:
+                    s += ' +' + nl
+                    s += t + key + ' * {}'.format(d[key])
+                
+                s += ')'
+                
+                # if len(keys) > 0:
+                    # s += ') + ' + nl
+                
+                
+                n0 = n[:]
+            s += ')'*(self.db.numIndVar-1) + nl
+        
+        return s
+    
     
     
 
