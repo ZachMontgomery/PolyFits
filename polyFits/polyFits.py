@@ -1476,7 +1476,7 @@ class polyFit():
             s += nl*2 + 'def evaluate_' + namesY[i] + '('+('{}, '*self.db.numIndVar).format(*[v+'1' for v in namesX])+'):' + nl
             
             
-            s += tab + ('{} = '*self.db.numIndVar).format(*[v+'0' for v in namesX]) + '1.0' + nl
+            # s += tab + ('{} = '*self.db.numIndVar).format(*[v+'0' for v in namesX]) + '1.0' + nl
             
             for v in range(self.db.numIndVar):
                 if self.Nvec[i][v] > 1:
@@ -1535,13 +1535,19 @@ class polyFit():
                 for k in range(self.db.numIndVar-1):
                     
                     if flag or n[k] != n0[k]:
-                        t += '{}{} * ('.format(namesX[k], n[k])
+                        if n[k] != 0:
+                            t += '{}{} * ('.format(namesX[k], n[k])
+                        else:
+                            t += '{}('.format(' '*(len(namesX[k])+4))
                         # p += 1
                         flag = True
                     else:
                         t += ' '*(len(namesX[k]) + len(str(n[k])) + 4)
                 
-                s += t + keys[0] + ' * {}'.format(d[keys[0]])
+                if keys[0][-1] != '0':
+                    s += t + keys[0] + ' * {}'.format(d[keys[0]])
+                else:
+                    s += t + ' '*len(keys[0]) + '   {}'.format(d[keys[0]])
                 
                 t = ' '*len(t)
                 for key in keys[1:]:
