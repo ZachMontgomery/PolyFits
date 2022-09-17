@@ -4,6 +4,7 @@ from multiprocessing import Pool, cpu_count
 import os
 import shutil
 import json
+from matplotlib import cm
 
 class database():
     
@@ -35,16 +36,113 @@ class database():
         
         self.name = name
     
-    def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, thinning=None, **kwargsScatter):
+    def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, thinning=None, makeScatter=True, numClusters=None, **kwargsScatter):
+        
+        I, x, y, F = self.constrainData(constraints,tol,F=f)
+        
+        z = np.array(y[:,iy])
+        y = np.array(x[:,1])
+        x = np.array(x[:,0])
+        
+        xmesh, ymesh, zmesh = self.clusterMesh(x,y,z,numClusters=numClusters)
+        fmesh = self.clusterMesh(x,y,F[:,0],numClusters=numClusters)[-1]
+        
+        if hasattr(ax, 'get_zlim'):
+            
+            ## plot the wireframes
+            if wireFrameColors != None:
+                MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
+                if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
+            else:
+                if type(f) == type(None):
+                    norm = zm.plt.Normalize(*ax.get_zlim3d())
+                    colors = cm.viridis(norm(zmesh))
+                    MESH = ax.plot_surface(xmesh, ymesh, zmesh, facecolors=colors, shade=False, linewidth=0.5)
+                    MESH.set_facecolor((0,0,0,0))
+                    ax.contour(xmesh, ymesh, zmesh, zdir='z', offset=ax.get_zlim3d()[0], cmap=cm.viridis, vmin=ax.get_zlim3d()[0], vmax=ax.get_zlim3d()[1])
+                if type(f) != type(None):
+                    MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
+                    ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
+            
+            ## plot the scatter points
+            if makeScatter:
+                if type(f) == type(None):
+                    ax.scatter(x, y, z, c='r', **kwargsScatter)
+                if type(f) != type(None):
+                    ax.scatter(x, y, z, c='C0', **kwargsScatter)
+                    ax.scatter(x, y, F, c='C1', **kwargsScatter)
+            ax.set_xlabel(self.namesX[I[0]])# labelsI[I])
+            ax.set_ylabel(self.namesX[I[1]])
+            ax.set_zlabel(self.namesY[iy])
+            
+            ## put on the avg lines
+            if avgLines:
+                if len(x) != 0:
+                    avgx = sum(x) / len(x)
+                    minx = min(x)
+                    maxx = max(x)
+                else:
+                    avgx = 0.
+                    minx = 0.
+                    maxx = 0.
+                if len(y) != 0:
+                    avgy = sum(y) / len(y)
+                    miny = min(y)
+                    maxy = max(y)
+                else:
+                    avgy = 0.
+                    miny = 0.
+                    maxy = 0.
+                if len(z) != 0:
+                    avgz = sum(z) / len(z)
+                    minz = min(z)
+                    maxz = max(z)
+                else:
+                    avgz = 0.
+                    minz = 0.
+                    maxz = 0.
+                
+                ax.plot([minx,maxx], [avgy,avgy], [avgz,avgz], 'r')
+                ax.plot([avgx,avgx], [miny,maxy], [avgz,avgz], 'r')
+                ax.plot([avgx,avgx], [avgy,avgy], [minz,maxz], 'r')
+            
+            ## update the view angle
+            ax.view_init(*view)
+            
+            return MESH
+        else:
+            
+            # levels = [-20, -15, -10, -5, 0, 5, 10, 15, 20]
+            
+            zctr = ax.contourf(xmesh, ymesh, zmesh, linestyles='solid', **kwargsScatter)
+            # zcbar = zm.plt.colorbar(zctr, ax=ax)
+            # zcbar.ax.set_ylabel(self.namesY[iy])
+            ax.clabel(zctr)
+            
+            ax.set_xlabel(self.namesX[I[0]])# labelsI[I])
+            ax.set_ylabel(self.namesX[I[1]])
+            ax.set_title(self.namesY[iy])
+            
+            if type(f) != type(None):
+                fctr = ax.contour(xmesh, ymesh, fmesh, zctr.levels, linestyles='dashdot', alpha=0.8)
+                # fcbar = zm.plt.colorbar(fctr, ax=ax)
+                # ax.clabel(fctr)
+            
+            return zctr
+    
+    def plotSnapshot1varOld(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, thinning=None, makeScatter=True, **kwargsScatter):
         
         if constraints.count(None) != 2: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot')
         
-        I, J = -1, -1
+        if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
+        
+        I, J = None, None
         for i,c in enumerate(constraints):
-            if I == -1 and c == None:
+            if I == None and c == None:
                 I = i
-            elif J == -1 and c == None:
+            elif J == None and c == None:
                 J = i
+                break
         
         Ncon = len(constraints)
         
@@ -55,7 +153,7 @@ class database():
             addPoint = True
             for j in range(Ncon):
                 if constraints[j] == None: continue
-                if not zm.nm.isClose(self.x[i,j], constraints[j], tol=tol):
+                if not zm.nm.isClose(self.x[i,j], constraints[j], tol=tol[j]):
                     addPoint = False
                     break
             if addPoint:
@@ -70,12 +168,12 @@ class database():
         for i in plotx:
             flag = True
             for j in ux:
-                if zm.nm.isClose(i, j, tol=tol): flag = False
+                if zm.nm.isClose(i, j, tol=tol[I]): flag = False
             if flag: ux.append(i)
         for i in ploty:
             flag = True
             for j in uy:
-                if zm.nm.isClose(i, j, tol=tol): flag = False
+                if zm.nm.isClose(i, j, tol=tol[J]): flag = False
             if flag: uy.append(i)
         
         ## sort the unique point arrays
@@ -104,11 +202,11 @@ class database():
             for i in range(len(plotx)-1,-1,-1):
                 flag = [True, True]
                 for j in range(len(ux)):
-                    if zm.nm.isClose(plotx[i], ux[j], tol=tol):
+                    if zm.nm.isClose(plotx[i], ux[j], tol=tol[I]):
                         flag[0] = False
                         break
                 for j in range(len(uy)):
-                    if zm.nm.isClose(ploty[i], uy[j], tol=tol):
+                    if zm.nm.isClose(ploty[i], uy[j], tol=tol[J]):
                         flag[1] = False
                         break
                 if flag[0] or flag[1]:
@@ -133,26 +231,35 @@ class database():
         
         ## fill in meshes
         for i in range(n):
-            px, py, pz = plotx[i], ploty[i], plotz[i]
-            row = myIndex(uy, py, tol=tol)
-            col = myIndex(ux, px, tol=tol)
-            # if None in (row, col): continue
-            zmesh[row, col] = pz
+            row = myIndex(uy, ploty[i], tol=tol[J])
+            col = myIndex(ux, plotx[i], tol=tol[I])
+            zmesh[row, col] = plotz[i]
             if type(f) != type(None): fmesh[row, col] = plotf[i]
         
         if hasattr(ax, 'get_zlim'):
             
             ## plot the wireframes
             if wireFrameColors != None:
-                ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
+                MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
                 if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
             else:
-                ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
-                if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
+                if type(f) == type(None):
+                    norm = zm.plt.Normalize(*ax.get_zlim3d())
+                    colors = cm.viridis(norm(zmesh))
+                    MESH = ax.plot_surface(xmesh, ymesh, zmesh, facecolors=colors, shade=False, linewidth=0.5)
+                    MESH.set_facecolor((0,0,0,0))
+                    ax.contour(xmesh, ymesh, zmesh, zdir='z', offset=ax.get_zlim3d()[0], cmap=cm.viridis, vmin=ax.get_zlim3d()[0], vmax=ax.get_zlim3d()[1])
+                if type(f) != type(None):
+                    MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, color='C0')
+                    ax.plot_wireframe(xmesh, ymesh, fmesh, color='C1')
             
             ## plot the scatter points
-            ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
-            if type(f) != type(None): ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
+            if makeScatter:
+                if type(f) == type(None):
+                    ax.scatter(plotx, ploty, plotz, c='r', **kwargsScatter)
+                if type(f) != type(None):
+                    ax.scatter(plotx, ploty, plotz, c='C0', **kwargsScatter)
+                    ax.scatter(plotx, ploty, plotf, c='C1', **kwargsScatter)
             ax.set_xlabel(self.namesX[I])# labelsI[I])
             ax.set_ylabel(self.namesX[J])
             ax.set_zlabel(self.namesY[iy])
@@ -191,6 +298,7 @@ class database():
             ## update the view angle
             ax.view_init(*view)
             
+            return MESH
         else:
             
             levels = [-20, -15, -10, -5, 0, 5, 10, 15, 20]
@@ -209,30 +317,223 @@ class database():
                 # fcbar = zm.plt.colorbar(fctr, ax=ax)
                 # ax.clabel(fctr)
             
-            
+            return zctr
     
-    def plotSnapshot(self, fig, ax, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, **kwargsScatter):
+    def constrainData(self,constraints,tol,F=None):
+        if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
+        if constraints.count(None) != 2 or len(constraints) != self.numIndVar: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot and a constraint for each remaining independent variable.')
+        if F != None:
+            f = np.array(F)
+        else:
+            f = np.zeros(self.y.shape)
+        ## get indices of the two independent variables
+        I = []
+        K = []
+        for i,c in enumerate(constraints):
+            if c == None:
+                I.append(i)
+            else:
+                K.append(i)
+        ## initializations
+        x = np.array(self.x)
+        y = np.array(self.y)
+        x = list(x)
+        x = [list(i) for i in x]
+        y = list(y)
+        y = [list(i) for i in y]
+        f = list(f)
+        f = [list(i) for i in f]
+        ## remove points that don't meet the constraints within the tolerances
+        for i in range(len(x)-1,-1,-1):
+            meetsCon = True
+            for v in K:
+                if not zm.nm.isClose(x[i][v], constraints[v], tol=tol[v]):
+                    meetsCon = False
+                    break
+            if not meetsCon:
+                x.pop(i)
+                y.pop(i)
+                f.pop(i)
+        ## return results
+        x = np.array(x)
+        y = np.array(y)
+        f = np.array(f)
+        return I, x[:,I], y, f
+    
+    @staticmethod
+    def closestIndex(ar,val):
+        d = [abs(val - a) for a in ar]
+        return d.index(min(d))
+    
+    @staticmethod
+    def maxDiscrepency(mesh,ar):
+        D = []
+        for m in mesh:
+            d = [abs(m-a) for a in ar]
+            D += [min(d)]
+        return max(D) / (max(ar) - min(ar)) * 100
+    
+    @staticmethod
+    def clusterData2numLvls(D,n):
+        
+        def printgr(group):
+            print()
+            print([np.mean(gr) for gr in group])
+            print([np.std(gr) for gr in group])
+            print([len(gr) for gr in group])
+            print()
+        
+        def regroup(mesh,data):
+            group = [[] for _ in range(len(mesh))]
+            for d in data:
+                i = database.closestIndex(mesh,d)
+                group[i].append(d)
+            return group
+        
+        d = np.array(D)
+        if n > len(d): raise ValueError('Ummm, you do not have enough datapoints, {}, for that many levels, {}.'.format(len(d),n))
+        if n < 1: raise ValueError('Why would you do this? Just solve for the average if that is what you want.')
+        
+        ## first grouping
+        mesh = [min(d),max(d)]
+        
+        group = regroup(mesh,d)
+        
+        mesh = [np.mean(gr) for gr in group]
+        group = regroup(mesh,d)
+        
+        for _ in range(n-2):
+            ## update xmesh
+            std = [np.std(gr) for gr in group]
+            i = std.index(max(std))
+            m,M = min(group[i]),max(group[i])
+            mesh.pop(i)
+            mesh.append(m)
+            mesh.append(M)
+            zm.nm.zSort(mesh, verbose=False)
+            
+            group = regroup(mesh,d)
+            
+            mesh = [np.mean(gr) for gr in group]
+            group = regroup(mesh, d)
+        return mesh
+    
+    @staticmethod
+    def createZmesh(ux, uy, X, Y, Z):
+        nx, ny = len(ux), len(uy)
+        
+        zmesh = np.zeros((ny,nx)) * np.nan
+        
+        dup = {}
+        
+        for i in range(len(Z)):
+            x = database.closestIndex(ux,X[i])
+            y = database.closestIndex(uy,Y[i])
+            if np.isnan(zmesh[y,x]):
+                zmesh[y,x] = Z[i]
+            else:
+                if (y,x) in dup:
+                    dup[(y,x)].append(Z[i])
+                else:
+                    dup[(y,x)] = [zmesh[y,x],Z[i]]
+                zmesh[y,x] = np.mean(dup[(y,x)])
+        
+        return zmesh
+    
+    @staticmethod
+    def clusterMesh(X,Y,Z,numClusters=None):
+        '''
+        Takes 1D arrays for X, Y, and Z
+        returns the finest mesh grid arrays that will NOT have any gaps
+        '''
+        x = np.array(X)
+        y = np.array(Y)
+        z = np.array(Z)
+        n = len(x)
+        
+        if  len(x.shape) > 1 | len(y.shape) > 1 | len(z.shape) > 1 | n != len(y) | n != len(z): raise ValueError()
+        
+        if numClusters != None:
+            ux = database.clusterData2numLvls(x,numClusters[0])
+            uy = database.clusterData2numLvls(y,numClusters[1])
+            zmesh = database.createZmesh(ux,uy,x,y,z)
+            xmesh, ymesh = np.meshgrid(ux, uy)
+            return xmesh, ymesh, zmesh
+        
+        nx = ny = 2
+        
+        ux = database.clusterData2numLvls(x,nx)
+        uy = database.clusterData2numLvls(y,ny)
+        zmesh = database.createZmesh(ux, uy, x, y, z)
+        
+        if np.isnan(zmesh).sum() > 0: raise ValueError('Cannot even mesh 2x2 grid')
+        
+        while np.isnan(zmesh).sum() == 0:
+            
+            dx = database.maxDiscrepency(ux,x)
+            dy = database.maxDiscrepency(uy,y)
+            if dx > dy:
+                incX = True
+            else:
+                incX = False
+            if incX:
+                nx += 1
+            else:
+                ny += 1
+            ux = database.clusterData2numLvls(x,nx)
+            uy = database.clusterData2numLvls(y,ny)
+            zmesh = database.createZmesh(ux,uy,x,y,z)
+            # print()
+            # print(nx,ny)
+            # print(ux)
+            # print(uy)
+            # print(np.isnan(zmesh).sum())
+            # input()
+        
+        if incX:
+            nx -= 1
+        else:
+            ny -= 1
+        ux = database.clusterData2numLvls(x,nx)
+        uy = database.clusterData2numLvls(y,ny)
+        zmesh = database.createZmesh(ux,uy,x,y,z)
+        xmesh, ymesh = np.meshgrid(ux, uy)
+        
+        return xmesh, ymesh, zmesh
+    
+    
+    
+    
+    def plotSnapshot(self, fig, ax, iy, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, makeScatter=True, numClusters=None, **kwargsScatter):
+        if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
+        MESHES = [None]*self.numDepVar
         if type(f) == type(None):
-            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
+            for i,j in enumerate(iy):
+                MESHES[i] = self.plotSnapshot1var(ax[i], constraints, j, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
         else:
             F = np.asarray(f)
-            for i in range(self.numDepVar): self.plotSnapshot1var(ax[i], constraints, i, f=F[:,i], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, **kwargsScatter)
+            for i,j in enumerate(iy):
+                MESHES[i] = self.plotSnapshot1var(ax[i], constraints, j, f=F[:,j], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
         numConstVar = self.numIndVar - 2
         ii = [i for i,j in enumerate(constraints) if j != None]
         C = [self.namesX[i] for i in ii]
         vals = [constraints[i] for i in ii]
-        fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))
+        tols = [tol[i] for i in ii]
+        fig.suptitle((r'  {} = {}$\pm${}'*numConstVar).format(*[j for i in zip(C, vals, tols) for j in i]))
         if spa != {}:
             fig.subplots_adjust(**spa)
         else:
             fig.tight_layout()
+        # fig.canvas.draw_idle()
+        return MESHES
     
-    def viewData(self, fig, ax, f=None, wireFrameColors=None, spa={}, tol=1e-6, **kwargsScatter):
+    def viewData(self, fig, ax, iy, f=None, wireFrameColors=None, spa={}, tol=1e-6, zlim=(), avgLines=True, makeScatter=True, numClusters=None, **kwargsScatter):
         
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
         
-        prec = str(int(abs(np.floor(np.log10(tol)))))
+        if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
+        prec = [str(int(abs(np.floor(np.log10(i))))) for i in tol]
         
         numConstVar = self.numIndVar - 2
         
@@ -261,26 +562,27 @@ class database():
                 ## find unique points along the independent variable direction
                 u = []
                 for I in self.x[:,ii[i]]:
+                    if I == None or np.isnan(I): continue
                     flag = True
                     for j in u:
-                        if zm.nm.isClose(I, j, tol=tol): flag = False
+                        if zm.nm.isClose(I, j, tol=tol[ii[i]]): flag = False
                     if flag: u.append(I)
                 ## sort the unique point arrays
                 zm.nm.zSort(u, verbose=False)
                 
                 print('Unique {} values in database:'.format(C[i]))
-                print((('  {:.'+prec+'f}')*len(u)).format(*u))
+                print((('  {:.'+prec[ii[i]]+'f}')*len(u)).format(*u))
                 vals[i] = float(input('Choose a value for {}: '.format(C[i])))
                 Consts[ii[i]] = vals[i]
                 print()
             
             if hasattr(ax[0], 'get_zlim'):
                 
-                ele = float(input('Enter elevation view angle for the plot(s) in degrees: '))
-                rot = float(input('Enter rotaion view angle for the plot(s) in degrees:   '))
+                ele = float(zm.io.timedInput('Enter elevation view angle for the plot(s) in degrees',15.0,timeout=1))
+                rot = float(zm.io.timedInput('Enter rotaion view angle for the plot(s) in degrees  ',35.0,timeout=1))
                 print()
                 
-                thin = int(input('Enter desired number of points along each dimension to plot, 0 for all points: '))
+                thin = int(zm.io.timedInput('Enter desired number of points along each dimension to plot, 0 for all points',0,timeout=1))
                 
             else:
                 ele = rot = thin = 0
@@ -292,13 +594,18 @@ class database():
             # print(len(fig.axes))
             
             for i in ax: i.cla()
+            if len(zlim) == len(ax):
+                for j,i in enumerate(ax):
+                    if hasattr(i, 'get_zlim'):
+                        i.set_zlim3d(zlim[j])
             
-            self.plotSnapshot(fig, ax, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, **kwargsScatter)
+            meshes = self.plotSnapshot(fig, ax, iy, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, tol=tol, avgLines=avgLines, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
             
             # fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
             if input('Plot again (y/n)? ').lower() == 'n': cont = False
             print()
+        return meshes
     
 
 class polyFit():
@@ -596,7 +903,7 @@ class polyFit():
                 ## check if using the same numer of cpus as on the current machine
                 if mpFits == 0: mpFits = cpu_count()
                 ## initialize progress bar
-                if verbose: prog = zm.io.Progress(len(it), title='Performing fits for {}'.format(self.db.name), c=self.c)
+                if verbose: prog = zm.io.oneLineProgress(len(it), msg='Performing fits for {}'.format(self.db.name), c=self.c)
                 ## perform the fits
                 with Pool(mpFits) as pool:
                     for _ in pool.imap_unordered(self.whichFit, it):
@@ -677,7 +984,7 @@ class polyFit():
         
         ## unpack kw
         Nvec            = self.kw[z]['Nvec']
-        interaction     = self.kw[z].get('interaction', True)
+        interaction     = self.kw[z].get('interaction', [])
         sym             = self.kw[z].get('sym', [False]*self.db.numIndVar)
         crossSymEven    = self.kw[z].get('crossSymEven', [])
         crossSymOdd     = self.kw[z].get('crossSymOdd', [])
@@ -688,6 +995,11 @@ class polyFit():
         mp              = self.kw[z].get('mp', cpu_count())
         verbose         = self.kw[z].get('verbose', True)
         saveMemory      = self.kw[z].get('saveMemory', False)
+        
+        if interaction == True:
+            interaction = []
+        elif interaction == False:
+            interaction = [[i,j] for i in range(self.db.numIndVar-1) for j in range(i,self.db.numIndVar) if i != j]
         
         ## set global variables numCoef and Nvec
         self.numCoef[iy,] = J = self.calcNumCoef(Nvec)
@@ -703,8 +1015,17 @@ class polyFit():
             n = self.decompose_j(j, Nvec)
             ## check if n is a zero constraint then continue on to the next j
             if tuple(n) in zeroConstraints: continue
-            ## check if j is an interaction term and if interactions aren't allowed then continue on to the next j
-            if not interaction and sum(n) != max(n): continue
+            ## check if j is an allowed interaction term and if not then continue on to the next j
+            
+            ## set interaction flag to true
+            interactionFlag = True
+            ## loop thru unallowed interactions
+            for vals in interaction:
+                if not 0 in [n[val] for val in vals]:
+                    interactionFlag = False
+                    break
+            if not interactionFlag: continue
+            
             ## initialize flag variable to false
             flag = False
             ## loop through the sym list to find the symmetry constraints
@@ -721,7 +1042,7 @@ class polyFit():
                     ## this else block means the order of the count-th independent variable is odd
                     else:
                         ## check if the n value of the count-th independent variable is even
-                        if n[count]%2 == 0:
+                        if n[count]%2 == 0 and n[count] != 0:
                             flag = True
             ## if the flag has been tripped, skip to the next j value
             if flag: continue
@@ -730,6 +1051,7 @@ class polyFit():
                 if flag: break
                 ## check if the n values from both variables given in val are even, then trip flag
                 if n[val[0]]%2 == 0 and n[val[1]]%2 == 0:
+                    if n[val[0]] == 0 and n[val[1]] == 0: continue  ## allow offset term
                     flag = True
                 ## check if the n values from both variables given in val are odd, then trip flap
                 if n[val[0]]%2 == 1 and n[val[1]]%2 == 1:
@@ -1463,7 +1785,7 @@ class polyFit():
         
         namesX = kws.get('namesX', self.db.namesX)
         namesY = kws.get('namesY', self.db.namesY)
-        name   = kws.get('name'  , self.db.name)
+        latex  = kws.get('latex' , False)
         
         
         tab = ' '*4
@@ -1525,8 +1847,13 @@ class polyFit():
                     # n0 = n[:]
                     continue
                 elif n0[0] != None:
-                    m = sum([1 for k in range(len(n0)-1) if n0[k] != n[k]])
-                    # print(m)
+                    # m = sum([1 for k in range(len(n0)-1) if n0[k] != n[k]])
+                    
+                    for k in range(len(n0)):
+                        if n0[k] != n[k]:
+                            break
+                    m = len(n0) - k
+                    
                     s += ')'*m + ' +' + nl
                 
                 t = tab*2
@@ -1554,16 +1881,72 @@ class polyFit():
                     s += ' +' + nl
                     s += t + key + ' * {}'.format(d[key])
                 
-                s += ')'
+                # s += ')'
                 
                 # if len(keys) > 0:
                     # s += ') + ' + nl
                 
                 
                 n0 = n[:]
-            s += ')'*(self.db.numIndVar-1) + nl
+            
+            s += ')'*self.db.numIndVar + nl
+            
         
-        return s
+        if not latex: return s
+        
+        ##############################################################
+        ##############################################################
+        
+        S = s.split(sep='def evaluate_')[1:]
+        
+        # myVars = (r'\alpha', r'\beta', r'\delta_a')
+        
+        lS = len(S)
+        nameY = [None]*lS
+        nameX = [None]*lS
+        eqn = [None]*lS
+        front = [None]*lS
+        out = [None]*lS
+        
+        for i in range(lS):
+            s = S[i]
+            for j in range(len(s)):
+                if s[j] == '(':
+                    J = j
+                elif s[j] == ')':
+                    JJ = j
+                elif s[j:j+9] == 'return (\n':
+                    break
+            nameY[i] = s[:J]
+            nameX[i] = s[J+1:j].split(sep='1, ')[:-1]
+            if i < lS -1:
+                eqn[i] = s[j+9:-4]
+            else:
+                eqn[i] = s[j+9:-2]
+            
+            j = -1
+            for old,new in zip(nameX[i],namesX):
+                j += 1
+                eqn[i] = eqn[i].replace(old, new+'^')
+                eqn[i] = eqn[i].replace('^1', '')
+            
+            front[i] = r'\quad ' + namesY[i] + r'({}'.format(namesX[0])
+            for j in range(1,len(namesX)):
+                front[i] += r',{}'.format(namesX[j])
+            front[i] += r')=' + '\n'
+            
+            s = '$' + front[i] + eqn[i] + '$'
+            
+            s = s.replace(' '*4, r'\quad')
+            
+            
+            s = r'\\|\quad '.join(s.split('\n'))
+            
+            out[i] = s
+        
+        return out
+    
+    
     
     
     
@@ -1601,13 +1984,13 @@ if __name__ == '__main__':
         'Nvec': [1,2,1,1,1]
         }
     
-    d3 = {'maxOrder': 2, 'sigmaMultiplier':1e-5}
+    d3 = {'maxOrder': 2, }
     
-    # kw = [d1, d2, d3, d1, d2, d1, d2, d1, d2, d1]
-    kw = [d3, d3, d3, d3, d3, d3, d3, d3, d3, d3]
+    kw = [d1, d2, d3, d1, d2, d3, d2, d1, d2, d1]
+    # kw = [d3, d3, d3, d3, d3, d3, d3, d3, d3, d3]
     
-    myFits = polyFit(db, kw, mpFits=0)
+    myFits = polyFit(db, kw, mpFits=1)
     
-    for c in myFits.coef:
-        print()
-        print(c)
+    # for c in myFits.coef:
+        # print()
+        # print(c)
