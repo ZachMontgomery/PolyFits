@@ -80,7 +80,7 @@ autoPolyFit
     Based on the method given by: Morelli, E. A., "Global Nonlinear
     Aerodynamic Modeling using Multivariate Orthogonal Functions," Journal
     of Aircraft, Vol. 32, Issue 2, 1995, pp. 270-277,
-    https://arc.aiaa.org/doi/abs/10.2514/3.4
+    https://doi.org/10.2514/3.46712
 
 zachsAutoPolyFit
     Under Construction
