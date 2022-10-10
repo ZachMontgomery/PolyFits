@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name = 'polyFits',
-    version = '0.0.1',
+    version = '1.1.0',
     author = 'Zach Montgomery',
     author_email = 'zachary.s.montgomery@gmail.com',
     description = 'Multivariable Polynomial Curve Fitting',
@@ -19,5 +19,5 @@ setuptools.setup(
         'Operating System :: OS Independent',
         ],
     python_requires = '>=3.6',
-    install_requires = ['numpy', 'datetime', 'jsonschema']
+    install_requires = ['numpy', 'ZachsModules']
     )
