@@ -1,104 +1,3 @@
-<<<<<<< HEAD
-"""Multivariable polynomial fit using Least Squares Regression.
-
-This module contains functions to calculate and use the polynomial
-coefficients for an arbitrary order polynomial curve fit to a dataset with
-an arbitrary number of independent variables. Curve fits can be performed
-with full control over the polynomial terms and custom weighting of
-datapoints.
-
-Methods are taken from:
-    Ullah, A. H., Fabijanic, C., Estevadeordal, J., Montgomery, Z. S.,
-    Hunsaker, D. F., Staiger, J. M., and Joo, J. J., "Experimental and
-    Numerical Evaluation of the Performance of Parabolic Flaps," AIAA
-    Aviation 2019 Forum, June 2019,
-    https://arc.aiaa.org/doi/abs/10.2514/6.2019-2916
-    
-    Morelli, E. A., "Global Nonlinear Aerodynamic Modeling using
-    Multivariate Orthogonal Functions," Journal of Aircraft, Vol. 32, Issue
-    2, 1995, pp. 270-277, https://arc.aiaa.org/doi/abs/10.2514/3.4
-
-Routine Listings
------------------
-
-multivariablePolynomialFit
-    function for calculating a curve fit to data with an arbitrary number of
-    independent variables
-
-multivariablePolynomialFunction
-    function for calculating a polynomial with an arbitrary number of
-    independent variables
-
-multivariableR2
-    function calculating the coefficient of determination value, or R^2
-    value, of a polynomial fit of an arbitrary number of independent
-    variables
-
-multivariableRMS
-    function calculating an RMS (root, mean, squared) error and a custom
-    RMSN (root, mean, squared, normalized) error where normalized means the
-    error is divided by the mean of the absolute value of the dependent
-    variables, for a multidimensional polynomial function.
-
-compose_j
-    function used by the multivariable series of functions that composes the
-    n values of the independent variables into the counter j, this function
-    can also be used for the nhat values and i
-
-decompose_j
-    function used by the multivariable seris of functions that decomposes
-    the counter j into the different n values for the independent variables,
-    this function can also be used for i and the nhat values.
-
-calcJ
-    Computes the total number of terms in a given multivariable polynomial
-    function
-
-kDecompose
-    Computes the exponents on the independent variables of the kth term of a
-    multivariable polynomial funciton
-
-kCompose
-    Computes the k index of the multivariable polynomial term corresponding
-    to the exponents of the independent variables.
-
-oneLineProgress
-    Class that defines a compact progress bar.
-
-multiSort
-    Function that sorts multiple arrays based on a master array, keeping the
-    order of data between arrays consistent.
-
-isClose
-    Function that determines if two values are 'sufficiently' close together
-
-autoPolyFit
-    Performs a multivariate polynomial curve fit to a dataset and
-    automatically determines which polynomial terms to use based on a
-    balance between the goodness of the fit and a predictve capabilities
-    measure that attempts to make the model compact.
-    
-    Based on the method given by: Morelli, E. A., "Global Nonlinear
-    Aerodynamic Modeling using Multivariate Orthogonal Functions," Journal
-    of Aircraft, Vol. 32, Issue 2, 1995, pp. 270-277,
-    https://doi.org/10.2514/3.46712
-
-zachsAutoPolyFit
-    Under Construction
-
-list2dict
-    Function converting the multivariable polynomial function information to
-    a dictionary.
-
-dict2list
-    Function converting the multivariable polynomial dictionary to the
-    polynomial coefficient list, order list, and R&2 value.
-
-polyFit2json
-    Function that writes the multivariable polynomial data to a JSON file.
-"""
-=======
->>>>>>> da763d0cd7e0f1fddb43f2eb2bf81427119cd3c7
 import numpy as np
 import ZachsModules as zm
 from multiprocessing import Pool, cpu_count
@@ -152,7 +51,7 @@ class database():
             
             ## plot the wireframes
             if wireFrameColors != None:
-                MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors)
+                MESH = ax.plot_wireframe(xmesh, ymesh, zmesh, colors=wireFrameColors, linewidth=0.5)
                 if type(f) != type(None): ax.plot_wireframe(xmesh, ymesh, fmesh, colors=wireFrameColors)
             else:
                 if type(f) == type(None):
@@ -168,7 +67,10 @@ class database():
             ## plot the scatter points
             if makeScatter:
                 if type(f) == type(None):
-                    ax.scatter(x, y, z, c='r', **kwargsScatter)
+                    if 'c' not in kwargsScatter:
+                        ax.scatter(x, y, z, c='r', **kwargsScatter)
+                    else:
+                        ax.scatter(x, y, z, **kwargsScatter)
                 if type(f) != type(None):
                     ax.scatter(x, y, z, c='C0', **kwargsScatter)
                     ax.scatter(x, y, F, c='C1', **kwargsScatter)
@@ -708,6 +610,100 @@ class database():
             print()
         return meshes
     
+    
+    
+    ##################################################################
+    
+    @staticmethod
+    def interpolate1Dformula(x1,x2,x,y1,y2):
+        return (y2-y1)/(x2-x1)*(x-x1)+y1
+    
+    def interpolate(self, x):
+        x = np.asarray(x)
+        
+        ## create copies of x and y arrays
+        X = np.array(self.x)
+        Y = np.array(self.y)
+        
+        ## sort arrays ?
+        
+        ## get distance vectors
+        d = [i - x for i in X]
+        dMag = [np.sqrt(sum([i*i for i in j])) for j in d]
+        I = list(range(X.shape[0]))
+        
+        zm.nm.zSort(dMag, d, I, verbose=False)
+        
+        print()
+        print('d')
+        print(d)
+        print('dMag')
+        print(dMag)
+        print('I')
+        print(I)
+        print()
+        
+        
+        # vals = [X.shape[0]+1] * (2 ** self.numIndVar)
+        D = []
+        J = []
+        tempNvec = [1] * self.numIndVar
+        for j in range(polyFit.calcNumCoef(tempNvec)):
+            n = polyFit.decompose_j(j, tempNvec)
+            print()
+            print(j)
+            print(n, tempNvec)
+            print(I)
+            print()
+            
+            for i,ii in enumerate(I):
+                flag = True
+                for k in range(self.numIndVar):
+                    print()
+                    print('if statement')
+                    print('n', n[k])
+                    print('d', d[i][k])
+                    print()
+                    if (n[k] == 0 and d[i][k] >= 0.) or (n[k] == 1 and d[i][k] <= 0.):
+                        flag = False
+                        break
+                if flag: break
+            if flag:
+                D.append(d[i])
+                J.append(ii)
+                d.pop(i)
+                I.pop(i)
+                dMag.pop(i)
+            else:
+                raise ValueError()
+        
+        X = [X[j,:] for j in J]
+        Y = [Y[j,:] for j in J]
+        
+        # ## loop thru each independent variable, halving the number of pts with interpolation each iteration
+        # for v in self.numIndVar:
+            # XX = []
+            # YY = []
+            
+            # ## loop thru points not dependent on the vth variable
+            # N = [1] * (self.numIndVar - v-1)
+            # for j in range(polyFit.calcNumCoef(N)):
+                # n = polyFit.decompose_j(j,N)
+                
+                # ## find bottom point
+                # ib = polyFit.compose_j(n+[0], tempNvec)
+                
+                # ## find top point
+                # it = polyFit.compose_j(n+[1], tempNvec)
+                
+                # ## perform interpolation formula
+                # XX.append( [
+        
+        db = database(X, Y)
+        fit = polyFit(db, [{'Nvec':[1]*self.numIndVar, 'mp':1, 'verbose':False}]*self.numDepVar, verbose=False)
+        
+        return [fit.evaluate(z, x) for z in range(self.numDepVar)]
+    
 
 class polyFit():
     
@@ -860,7 +856,7 @@ class polyFit():
                 weighting : callable function, optional
                     If given, weighting should be a function that takes as
                     arguments db, iy, and ip where db is the database object
-                    iy is the index representing the independent variable, 
+                    iy is the index representing the dependent variable, 
                     and ip is the index representing a certain data point.
                     weighting should return a 'weighting factor' that
                     determines how important that datapoint is. Returning a
@@ -1046,9 +1042,9 @@ class polyFit():
         return kk, w
     
     def __computeCHU__(self, n, cpus):
-        chu = n // cpus // 20
+        chu = n // (cpus * 20)
         # chu = 10
-        if chu > 8000: return 8000
+        # if chu > 8000: return 8000
         if chu < 1: return 1
         return chu
     
@@ -1207,7 +1203,7 @@ class polyFit():
                 else:
                     cpus = mp
                 
-                with Pool(cpus) as pool:
+                with Pool(processes=cpus, maxtasksperchild=1) as pool:
                     for vals in pool.imap_unordered(self.createX, it, chunksize=self.__computeCHU__(lenActive*k, cpus)):
                         kk, jj, val = vals
                         X[kk, jj] = val
@@ -1362,9 +1358,10 @@ class polyFit():
                     cpus = mp
                 
                 with Pool(cpus) as pool:
-                    chu = k // cpus // 20
-                    if chu > 8000: chu = 8000
-                    if chu < 1: chu = 1
+                    chu = self.__computeCHU__(k, cpus)
+                    # chu = k // cpus // 20
+                    # if chu > 8000: chu = 8000
+                    # if chu < 1: chu = 1
                     for i, val in pool.imap_unordered(self.evalMP, it, chunksize=chu):
                         self.f[i,z] = val
                         if verbose: prog.display()
@@ -2053,7 +2050,16 @@ class polyFit():
     
 
 
-
+def nestedFor(*iterables, enumerate=False):
+    ## nestedFor('ABC', 'xy', '12') --> Ax1 Ax2 Ay1 Ay2 Bx1 Bx2 By1 By2 Cx1 Cx2 Cy1 Cy2 
+    Nvec = [len(i)-1 for i in iterables]
+    V = len(Nvec)
+    for j in range(polyFit.calcNumCoef(Nvec)):
+        n = polyFit.decompose_j(j, Nvec)
+        if enumerate:
+            yield tuple(n), tuple([iterables[i][n[i]] for i in range(V)])
+        else:
+            yield tuple([iterables[i][n[i]] for i in range(V)])
 
 
 
@@ -2066,7 +2072,7 @@ class polyFit():
 ############################################################################
 ############################################################################
 ############################################################################
-
+'''
 if __name__ == '__main__':
     
     k = 10000
@@ -2095,3 +2101,6 @@ if __name__ == '__main__':
     # for c in myFits.coef:
         # print()
         # print(c)
+'''
+
+
