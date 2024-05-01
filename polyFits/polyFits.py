@@ -45,7 +45,7 @@ class database():
         x = np.array(x[:,0])
         
         xmesh, ymesh, zmesh = self.clusterMesh(x,y,z,numClusters=numClusters)
-        fmesh = self.clusterMesh(x,y,F[:,0],numClusters=numClusters)[-1]
+        fmesh = self.clusterMesh(x,y,F[:,iy],numClusters=numClusters)[-1]
         
         if hasattr(ax, 'get_zlim'):
             
@@ -73,7 +73,7 @@ class database():
                         ax.scatter(x, y, z, **kwargsScatter)
                 if type(f) != type(None):
                     ax.scatter(x, y, z, c='C0', **kwargsScatter)
-                    ax.scatter(x, y, F, c='C1', **kwargsScatter)
+                    ax.scatter(x, y, F[:,iy], c='C1', **kwargsScatter)
             ax.set_xlabel(self.namesX[I[0]])# labelsI[I])
             ax.set_ylabel(self.namesX[I[1]])
             ax.set_zlabel(self.namesY[iy])
@@ -325,7 +325,7 @@ class database():
     def constrainData(self,constraints,tol,F=None):
         if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
         if constraints.count(None) != 2 or len(constraints) != self.numIndVar: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot and a constraint for each remaining independent variable.')
-        if F != None:
+        if type(F) != type(None):
             f = np.array(F)
         else:
             f = np.zeros(self.y.shape)
@@ -340,6 +340,7 @@ class database():
         ## initializations
         x = np.array(self.x)
         y = np.array(self.y)
+        
         x = list(x)
         x = [list(i) for i in x]
         y = list(y)
@@ -517,7 +518,7 @@ class database():
         else:
             F = np.asarray(f)
             for i,j in enumerate(iy):
-                MESHES[i] = self.plotSnapshot1var(ax[i], constraints, j, f=F[:,j], avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
+                MESHES[i] = self.plotSnapshot1var(ax[i], constraints, j, f=F, avgLines=avgLines, tol=tol, wireFrameColors=wireFrameColors[i], view=view, thinning=thinning, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
         numConstVar = self.numIndVar - 2
         ii = [i for i,j in enumerate(constraints) if j != None]
         C = [self.namesX[i] for i in ii]
@@ -543,18 +544,33 @@ class database():
         cont = True
         while cont:
             
-            C = []
-            if numConstVar > 0: zm.io.text(*self.namesX, title='Choose {} variables to hold constant'.format(numConstVar))
-            while len(C) != numConstVar:
-                incorrect = True
-                while incorrect:
-                    c = input('Enter variable:  ')
-                    if c in self.namesX and c not in C:
-                        incorrect = False
-                    else:
-                        print('invalid entry, try again')
-                C.append(c)
+            # C = []
+            # if numConstVar > 0: zm.io.text(*self.namesX, title='Choose {} variables to hold constant'.format(numConstVar))
+            # while len(C) != numConstVar:
+                # incorrect = True
+                # while incorrect:
+                    # c = input('Enter variable:  ')
+                    # if c in self.namesX and c not in C:
+                        # incorrect = False
+                    # else:
+                        # print('invalid entry, try again')
+                # C.append(c)
+            # print()
+            
+            P = []
+            if numConstVar > 0:
+                zm.io.text(*self.namesX, title='Choose 2 variables to plot')
+                while len(P) < 2:
+                    incorrect = True
+                    while incorrect:
+                        c = input('Enter variable:  ')
+                        if c in self.namesX and c not in P:
+                            incorrect = False
+                        else:
+                            print('invalid entry, try again')
+                    P.append(c)
             print()
+            C = [c for c in self.namesX if c not in P]
             
             ii = [self.namesX.index(c) for c in C]
             Consts = [None]*self.numIndVar
@@ -1048,6 +1064,9 @@ class polyFit():
         if chu < 1: return 1
         return chu
     
+    def getCHU(self, n, cpus):
+        return self.__computeCHU__(n, cpus)
+    
     def createA(self, args):
         r, c, z, w, p = args
         a = 0.
@@ -1392,7 +1411,29 @@ class polyFit():
     def evalMP(self, args):
         return args[0], self.evaluate(args[1], self.db.x[args[0],:])
     
+    @staticmethod
+    def evalPoly1D(a, x):
+        '''
+        a is an iterable of float values associated with the polynomial coefficients. It should be ordered such that it starts with the constant and ends with the highest order coefficient
+        '''
+        p = a[-1]                   ## start the sum with the highest order coefficient
+        for i in a[-2::-1]:         ## loop thru the second to highest order coefficient to the constant
+            p *= x                  ## higher order coefficients than the current iteration get multiplied by x
+            p += i                  ## this iteration's coefficient gets added onto the sum
+        return p                    ## return the result
+    
     def evaluate(self, z, x):
+        a = self.coef[z][:]
+        for v in range(len(self.Nvec[z])-1,0,-1):
+            k = self.Nvec[z][v] + 1
+            J = self.calcNumCoef(self.Nvec[z][:v+1])
+            for i in range(int(J/k)):
+                s = i * k
+                e = s + k
+                a[i] = self.evalPoly1D(a[s:e], x[v])
+        return self.evalPoly1D(a[:int(J/k)], x[0])
+    
+    def evaluateOld(self, z, x):
         if type(x) not in (tuple, list, np.ndarray): x = [x]
         if len(x) != self.db.numIndVar: raise ValueError()
         # initialize summation to 0
@@ -2044,7 +2085,97 @@ class polyFit():
         
         return out
     
+    @staticmethod
+    def reorderMultiPoly(A, z, Nvec, verbose=True):
+        '''
+        reorders the independent variables so that the zth variable corresponds with the last entry in Nvec
+        Nnew = Nvec[:]
+        temp = Nnew.pop(z)
+        Nnew.append(temp)
+        Reorders the A coefficients accordingly
+        '''
+        V = len(Nvec)
+        if z in (V-1, -1):
+            return A, Nvec
+        elif z >= V or z < -V:
+            raise ValueError()
+        
+        lA = len(A)
+        a = [None] * lA
+        
+        Nnew = Nvec[:]
+        temp = Nnew.pop(z)
+        Nnew.append(temp)
+        
+        if verbose: prog = zm.io.oneLineProgress(lA, msg='Reordering multiPoly')
+        for jnew in range(lA):
+            ## find jold that corresponds with jnew
+            nnew = polyFit.decompose_j(jnew, Nnew)
+            nold = nnew[:]
+            temp = nold.pop()
+            nold.insert(z, temp)
+            jold = polyFit.compose_j(nold, Nvec)
+            
+            a[jnew] = A[jold]
+            if verbose: prog.display()
+        
+        return a, Nnew
     
+    @staticmethod
+    def reduceMultiPoly(A, z, x, Nvec):
+        a = A[:]
+        Nnew = Nvec[:]
+        if zm.misc.isIterable(z) and zm.misc.isIterable(x):
+            ## check for duplicates in z
+            z = list(z)
+            lz = len(z)
+            for i in range(lz):
+                for j in range(i+1, lz):
+                    if z[i] == z[j]: raise ValueError()
+            ## initialize Z array
+            V = len(Nvec)
+            Z = [None] * lz
+            if z[0] <= V:
+                Z[0] = z[0]
+            else:
+                raise ValueError()
+            ## loop thru remaining z values
+            for i in range(1,lz):
+                V -= 1
+                z = z[0:i] + [z[j]-1 if z[j] > Z[i-1] else z[j] for j in range(i,lz)]
+                if z[i] <= V:
+                    Z[i] = z[i]
+                else:
+                    raise ValueError()
+            for zz, xx in zip(Z, x):
+                a, Nnew = polyFit.reorderMultiPoly(a, zz, Nnew)
+                
+                k = Nnew[-1] + 1
+                J = len(a)
+                Jk = int(J/k)
+                b = [None] * Jk
+                for i in range(Jk):
+                    s = i*k
+                    e = s+k
+                    b[i] = polyFit.evalPoly1D(a[s:e], xx)
+                
+                a = b[:]
+                Nnew = Nnew[:-1]
+        else:
+            a, Nnew = polyFit.reorderMultiPoly(a, z, Nnew)
+            
+            k = Nnew[-1] + 1
+            J = len(a)
+            Jk = int(J/k)
+            b = [None] * Jk
+            for i in range(Jk):
+                s = i * k
+                e = s + k
+                b[i] = polyFit.evalPoly1D(a[s:e], x)
+            
+            a = b[:]
+            Nnew = Nnew[:-1]
+        return a, Nnew
     
     
     
@@ -2072,35 +2203,3 @@ def nestedFor(*iterables, enumerate=False):
 ############################################################################
 ############################################################################
 ############################################################################
-'''
-if __name__ == '__main__':
-    
-    k = 10000
-    V = 5
-    U = 10
-    x = np.random.rand(k,V)
-    y = np.random.rand(k,U)
-    
-    db = database(x, y)
-    
-    d1 = {
-        'Nvec': [2,1,1,1,1]
-        }
-    
-    d2 = {
-        'Nvec': [1,2,1,1,1]
-        }
-    
-    d3 = {'maxOrder': 2, }
-    
-    kw = [d1, d2, d3, d1, d2, d3, d2, d1, d2, d1]
-    # kw = [d3, d3, d3, d3, d3, d3, d3, d3, d3, d3]
-    
-    myFits = polyFit(db, kw, mpFits=1)
-    
-    # for c in myFits.coef:
-        # print()
-        # print(c)
-'''
-
-
