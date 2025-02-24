@@ -5,6 +5,9 @@ import os
 import shutil
 import json
 from matplotlib import cm
+import types, functools
+import dill
+import matplotlib.animation as animation
 
 class database():
     
@@ -35,6 +38,12 @@ class database():
             self.namesY = namesY
         
         self.name = name
+        
+        self.boundary = zm.io.dataStruct()
+        self.boundary.need2Initialize = True
+        
+        self.viewDataHelper = zm.io.dataStruct()
+        self.viewDataHelper.Initialize = False
     
     def plotSnapshot1var(self, ax, constraints, iy, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, view=[30.]*2, thinning=None, makeScatter=True, numClusters=None, **kwargsScatter):
         
@@ -43,10 +52,8 @@ class database():
         z = np.array(y[:,iy])
         y = np.array(x[:,1])
         x = np.array(x[:,0])
-        
-        xmesh, ymesh, zmesh = self.clusterMesh(x,y,z,numClusters=numClusters)
-        fmesh = self.clusterMesh(x,y,F[:,iy],numClusters=numClusters)[-1]
-        
+        xmesh, ymesh, zmesh = self.clusterMesh(x,y,z,numClusters=numClusters,tol=[tol[i] for i in I])
+        fmesh = self.clusterMesh(x,y,F[:,iy],numClusters=numClusters,tol=[tol[i] for i in I])[-1]
         if hasattr(ax, 'get_zlim'):
             
             ## plot the wireframes
@@ -322,8 +329,13 @@ class database():
             
             return zctr
     
-    def constrainData(self,constraints,tol,F=None):
-        if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
+    def constrainData(self,constraints,Tol,F=None,verbose=True):
+        if not zm.misc.isIterable(Tol):
+            tol = [Tol]*self.numIndVar
+        else:
+            tol = Tol[:]
+        for i in range(len(tol)):
+            if tol[i] == None: tol[i] = 1e-6
         if constraints.count(None) != 2 or len(constraints) != self.numIndVar: raise ValueError('There needs to be 2 non-constraints corresponding to the two horizontal axis on the plot and a constraint for each remaining independent variable.')
         if type(F) != type(None):
             f = np.array(F)
@@ -348,6 +360,7 @@ class database():
         f = list(f)
         f = [list(i) for i in f]
         ## remove points that don't meet the constraints within the tolerances
+        if verbose: prog = zm.io.oneLineProgress(len(x), msg='Constraining Data')
         for i in range(len(x)-1,-1,-1):
             meetsCon = True
             for v in K:
@@ -358,6 +371,56 @@ class database():
                 x.pop(i)
                 y.pop(i)
                 f.pop(i)
+            if verbose: prog.display()
+        ## return results
+        x = np.array(x)
+        y = np.array(y)
+        f = np.array(f)
+        return I, x[:,I], y, f
+    
+    def constrainData1D(self,constraints,Tol,F=None,verbose=True):
+        if not zm.misc.isIterable(Tol):
+            tol = [Tol]*self.numIndVar
+        else:
+            tol = Tol[:]
+        for i in range(len(tol)):
+            if tol[i] == None: tol[i] = 1e-6
+        if constraints.count(None) != 1 or len(constraints) != self.numIndVar: raise ValueError('There needs to be 1 non-constraint corresponding to the horizontal axis on the plot and a constraint for each remaining independent variable.')
+        if type(F) != type(None):
+            f = np.array(F)
+        else:
+            f = np.zeros(self.y.shape)
+        ## get indices of the independent variable
+        I = []
+        K = []
+        for i,c in enumerate(constraints):
+            if c == None:
+                I.append(i)
+            else:
+                K.append(i)
+        ## initializations
+        x = np.array(self.x)
+        y = np.array(self.y)
+        
+        x = list(x)
+        x = [list(i) for i in x]
+        y = list(y)
+        y = [list(i) for i in y]
+        f = list(f)
+        f = [list(i) for i in f]
+        ## remove points that don't meet the constraints within the tolerance
+        if verbose: prog = zm.io.oneLineProgress(len(x), msg='Constraining Data 1D')
+        for i in range(len(x)-1,-1,-1):
+            meetsCon = True
+            for v in K:
+                if not zm.nm.isClose(x[i][v], constraints[v], tol=tol[v]):
+                    meetsCon = False
+                    break
+            if not meetsCon:
+                x.pop(i)
+                y.pop(i)
+                f.pop(i)
+            if verbose: prog.display()
         ## return results
         x = np.array(x)
         y = np.array(y)
@@ -400,7 +463,6 @@ class database():
         
         ## first grouping
         mesh = [min(d),max(d)]
-        
         group = regroup(mesh,d)
         
         mesh = [np.mean(gr) for gr in group]
@@ -415,12 +477,26 @@ class database():
             mesh.append(m)
             mesh.append(M)
             zm.nm.zSort(mesh, verbose=False)
-            
             group = regroup(mesh,d)
             
             mesh = [np.mean(gr) for gr in group]
             group = regroup(mesh, d)
         return mesh
+    
+    @staticmethod
+    def regroup(mesh,data):
+        group = [[] for _ in range(len(mesh))]
+        for d in data:
+            i = database.closestIndex(mesh, d)
+            group[i].append(d)
+        return group
+    
+    @staticmethod
+    def remesh(mesh, d):
+        group = database.regroup(mesh, d)
+        mesh2 = [np.mean(gr) for gr in group if len(gr) > 0]
+        group = database.regroup(mesh, d)
+        return mesh2, group
     
     @staticmethod
     def createZmesh(ux, uy, X, Y, Z):
@@ -445,7 +521,7 @@ class database():
         return zmesh
     
     @staticmethod
-    def clusterMesh(X,Y,Z,numClusters=None):
+    def clusterMesh(X,Y,Z,numClusters=None,tol=None):
         '''
         Takes 1D arrays for X, Y, and Z
         returns the finest mesh grid arrays that will NOT have any gaps
@@ -456,59 +532,86 @@ class database():
         n = len(x)
         
         if  len(x.shape) > 1 | len(y.shape) > 1 | len(z.shape) > 1 | n != len(y) | n != len(z): raise ValueError()
+        if not zm.misc.isIterable(tol):
+            Tol = [tol]*2
+        else:
+            Tol = tol[:]
         
         if numClusters != None:
+            # zm.io.oneLineText('clustering to a fixed grid size')
             ux = database.clusterData2numLvls(x,numClusters[0])
             uy = database.clusterData2numLvls(y,numClusters[1])
             zmesh = database.createZmesh(ux,uy,x,y,z)
             xmesh, ymesh = np.meshgrid(ux, uy)
             return xmesh, ymesh, zmesh
-        
-        nx = ny = 2
-        
-        ux = database.clusterData2numLvls(x,nx)
-        uy = database.clusterData2numLvls(y,ny)
-        zmesh = database.createZmesh(ux, uy, x, y, z)
-        
-        if np.isnan(zmesh).sum() > 0: raise ValueError('Cannot even mesh 2x2 grid')
-        
-        while np.isnan(zmesh).sum() == 0:
-            
-            dx = database.maxDiscrepency(ux,x)
-            dy = database.maxDiscrepency(uy,y)
-            if dx > dy:
-                incX = True
-            else:
-                incX = False
+        elif not None in Tol:
+            # zm.io.oneLineText('clustering to a specified tolerance')
+            ux = database.clusterData(x, Tol[0])
+            uy = database.clusterData(y, Tol[1])
+            zmesh = database.createZmesh(ux, uy, x, y, z)
+            xmesh, ymesh = np.meshgrid(ux, uy)
+            return xmesh, ymesh, zmesh
+        else:
+            # zm.io.oneLineText('auto generating grid size')
+            nx = ny = 2
+            ux = database.clusterData2numLvls(x,nx)
+            uy = database.clusterData2numLvls(y,ny)
+            zmesh = database.createZmesh(ux, uy, x, y, z)
+            if np.isnan(zmesh).sum() > 0: raise ValueError('Cannot even mesh 2x2 grid')
+            while np.isnan(zmesh).sum() == 0 and (nx <= 31 and ny <= 31):
+                dx = database.maxDiscrepency(ux,x)
+                dy = database.maxDiscrepency(uy,y)
+                if dx > dy:
+                    if nx <= 30:
+                        incX = True
+                    else:
+                        incX = False
+                else:
+                    if ny <= 30:
+                        incX = False
+                    else:
+                        incX = True
+                if incX:
+                    nx += 1
+                else:
+                    ny += 1
+                ux = database.clusterData2numLvls(x,nx)
+                uy = database.clusterData2numLvls(y,ny)
+                zmesh = database.createZmesh(ux,uy,x,y,z)
             if incX:
-                nx += 1
+                nx -= 1
             else:
-                ny += 1
+                ny -= 1
             ux = database.clusterData2numLvls(x,nx)
             uy = database.clusterData2numLvls(y,ny)
             zmesh = database.createZmesh(ux,uy,x,y,z)
-            # print()
-            # print(nx,ny)
-            # print(ux)
-            # print(uy)
-            # print(np.isnan(zmesh).sum())
-            # input()
-        
-        if incX:
-            nx -= 1
-        else:
-            ny -= 1
-        ux = database.clusterData2numLvls(x,nx)
-        uy = database.clusterData2numLvls(y,ny)
-        zmesh = database.createZmesh(ux,uy,x,y,z)
-        xmesh, ymesh = np.meshgrid(ux, uy)
-        
-        return xmesh, ymesh, zmesh
+            xmesh, ymesh = np.meshgrid(ux, uy)
+            return xmesh, ymesh, zmesh
+    
+    @staticmethod
+    def clusterData(D, tol, maxIT=41):
+        d = np.asarray(D)
+        tolSD = tol/3
+        mesh=[min(d), max(d)]
+        mesh, group = database.remesh(mesh, d)
+        sds = [np.std(gr) for gr in group]
+        maxSD = max(sds)
+        cnt = 1
+        while maxSD > tolSD and cnt < maxIT:
+            cnt += 1
+            i = sds.index(maxSD)
+            m,M = min(group[i]), max(group[i])
+            mesh.pop(i)
+            mesh.append(m)
+            mesh.append(M)
+            zm.nm.zSort(mesh, verbose=False)
+            mesh, group = database.remesh(mesh, d)
+            sds = [np.std(gr) for gr in group]
+            maxSD = max(sds)
+        return mesh
     
     
-    
-    
-    def plotSnapshot(self, fig, ax, iy, constraints, f=None, avgLines=True, tol=1e-6, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, makeScatter=True, numClusters=None, **kwargsScatter):
+    def plotSnapshot(self, fig, ax, iy, constraints, f=None, avgLines=True, tol=None, wireFrameColors=None, spa={}, view=[30.]*2, thinning=None, makeScatter=True, numClusters=None, **kwargsScatter):
         if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
         MESHES = [None]*self.numDepVar
@@ -523,7 +626,7 @@ class database():
         ii = [i for i,j in enumerate(constraints) if j != None]
         C = [self.namesX[i] for i in ii]
         vals = [constraints[i] for i in ii]
-        tols = [tol[i] for i in ii]
+        tols = [tol[i] if tol[i] != None else 1e-6 for i in ii]
         fig.suptitle((r'  {} = {}$\pm${}'*numConstVar).format(*[j for i in zip(C, vals, tols) for j in i]))
         if spa != {}:
             fig.subplots_adjust(**spa)
@@ -532,14 +635,22 @@ class database():
         # fig.canvas.draw_idle()
         return MESHES
     
-    def viewData(self, fig, ax, iy, f=None, wireFrameColors=None, spa={}, tol=1e-6, zlim=(), avgLines=True, makeScatter=True, numClusters=None, **kwargsScatter):
+    def viewData(self, fig, ax, iy, f=None, wireFrameColors=None, spa={}, tol=None, zlim=(), avgLines=True, makeScatter=True, numClusters=None, animate=0, interval=0.033, **kwargsScatter):
         
         if wireFrameColors == None: wireFrameColors = [None]*self.numDepVar
-        
         if not zm.misc.isIterable(tol): tol = [tol]*self.numIndVar
-        prec = [str(int(abs(np.floor(np.log10(i))))) for i in tol]
+        prec = [str(int(abs(np.floor(np.log10(i))))) if i != None else '6' for i in tol]
         
         numConstVar = self.numIndVar - 2
+        
+        prog = zm.io.oneLineProgress(self.numIndVar, msg='Determining grid for viewing data')
+        ux = [None] * self.numIndVar
+        for ix in range(self.numIndVar):
+            if tol[ix] != None:
+                ux[ix] = database.clusterData(self.x[:,ix], tol[ix])
+            else:
+                ux[ix] = database.clusterData(self.x[:,ix], 1e-6)
+            prog.display()
         
         cont = True
         while cont:
@@ -570,6 +681,12 @@ class database():
                             print('invalid entry, try again')
                     P.append(c)
             print()
+            if numClusters == None:
+                nClusters = None
+            elif zm.misc.isIterable(numClusters):
+                nClusters = [numClusters[self.namesX.index(c)] for c in P]
+            else:
+                nClusters = [numClusters]*2
             C = [c for c in self.namesX if c not in P]
             
             ii = [self.namesX.index(c) for c in C]
@@ -578,30 +695,43 @@ class database():
             
             for i in range(numConstVar):
                 
-                ## find unique points along the independent variable direction
-                u = []
-                for I in self.x[:,ii[i]]:
-                    if I == None or np.isnan(I): continue
-                    flag = True
-                    for j in u:
-                        if zm.nm.isClose(I, j, tol=tol[ii[i]]): flag = False
-                    if flag: u.append(I)
-                ## sort the unique point arrays
-                zm.nm.zSort(u, verbose=False)
+                # ## find unique points along the independent variable direction
+                # u = []
+                # for I in self.x[:,ii[i]]:
+                    # if I == None or np.isnan(I): continue
+                    # flag = True
+                    # for j in u:
+                        # if zm.nm.isClose(I, j, tol=tol[ii[i]]): flag = False
+                    # if flag: u.append(I)
+                # ## sort the unique point arrays
+                # zm.nm.zSort(u, verbose=False)
+                
+                # if tol[i] != None:
+                    # u = database.clusterData(self.x[:,ii[i]], tol[i])
+                # else:
+                    # u = database.clusterData(self.x[:,ii[i]], 1e-6)
+                u = ux[ii[i]]
+                
+                
                 
                 print('Unique {} values in database:'.format(C[i]))
                 print((('  {:.'+prec[ii[i]]+'f}')*len(u)).format(*u))
+                # for val, sd, avg, md, lgrp, w in zip(u, sds, avgs, mds, lgrps, ws):
+                    # print(('  {:.'+prec[ii[i]]+'f}' + '  {:15.12f}'*5).format(val, sd, w, avg, md, lgrp))
+                
                 vals[i] = float(input('Choose a value for {}: '.format(C[i])))
-                Consts[ii[i]] = vals[i]
+                # if vals[i] < min(u): vals[i] = min(u)
+                # if vals[i] > max(u): vals[i] = max(u)
+                Consts[ii[i]] = u[self.closestIndex(u, vals[i])]
                 print()
             
             if hasattr(ax[0], 'get_zlim'):
                 
-                ele = float(zm.io.timedInput('Enter elevation view angle for the plot(s) in degrees',15.0,timeout=1))
-                rot = float(zm.io.timedInput('Enter rotaion view angle for the plot(s) in degrees  ',35.0,timeout=1))
+                ele = 15#float(zm.io.timedInput('Enter elevation view angle for the plot(s) in degrees',15.0,timeout=1))
+                rot = 35#float(zm.io.timedInput('Enter rotaion view angle for the plot(s) in degrees  ',35.0,timeout=1))
                 print()
                 
-                thin = int(zm.io.timedInput('Enter desired number of points along each dimension to plot, 0 for all points',0,timeout=1))
+                thin = 0#int(zm.io.timedInput('Enter desired number of points along each dimension to plot, 0 for all points',0,timeout=1))
                 
             else:
                 ele = rot = thin = 0
@@ -620,9 +750,30 @@ class database():
             
             meshes = self.plotSnapshot(fig, ax, iy, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, tol=tol, avgLines=avgLines, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
             
+            if animate > 0:
+                # interval = 0.033
+                nFrames = int(animate / interval) + 1
+                kFrames = nFrames // 4
+                rot1 =  45-45*np.cos(np.linspace(0,np.pi,kFrames))
+                rot2 = 135-45*np.cos(np.linspace(0,np.pi,kFrames))
+                rot3 = 225-45*np.cos(np.linspace(0,np.pi,kFrames))
+                rot4 = 315-45*np.cos(np.linspace(0,np.pi,kFrames))
+                azi = np.array(list(rot1)+list(rot2)+list(rot3)+list(rot4)) + rot
+                nFrames = len(azi)
+                def update(frame):
+                    for a in ax:
+                        a.view_init(ele, axi[frame])
+                ani = animation.FuncAnimation(fig=fig, func=update, frames=nFrames, interval=interval*1000)
+                ani.save(filename='exampleAnimation.gif', writer='pillow')
+                #ani.save(filename='exampleAnimation.html', writer='html')
+            
             # fig.suptitle(('  {} = {}'*numConstVar).format(*[j for i in zip(C, vals) for j in i]))#C[0], vals[0], C[1], vals[1]))
             
-            if input('Plot again (y/n)? ').lower() == 'n': cont = False
+            if numConstVar > 0:
+                if input('Plot again (y/n)? ').lower() == 'n': cont = False
+            else:
+                cont = False
+                zm.io.pause()
             print()
         return meshes
     
@@ -713,13 +864,386 @@ class database():
                 # it = polyFit.compose_j(n+[1], tempNvec)
                 
                 # ## perform interpolation formula
-                # XX.append( [
+                # XX.append( [])
         
         db = database(X, Y)
         fit = polyFit(db, [{'Nvec':[1]*self.numIndVar, 'mp':1, 'verbose':False}]*self.numDepVar, verbose=False)
         
         return [fit.evaluate(z, x) for z in range(self.numDepVar)]
     
+    def insideBoundsOld(self, x, tol=None, buf=0.1):
+        for ix in range(self.numIndVar):
+            if x[ix] < min(self.x[:,ix]): return False
+            if x[ix] > max(self.x[:,ix]): return False
+        
+        ## initialize tolerable mesh
+        ################################################################
+        if self.boundary.need2Initialize:
+            self.boundary.need2Initialize = False
+            #get max allowable step across each independent variable
+            # self.boundary.steps = [None] * self.numIndVar
+            self.boundary.tol = tol[:]
+            self.boundary.mesh = [None] * self.numIndVar
+            for ix in range(self.numIndVar):
+                self.boundary.mesh[ix] = self.clusterdata(self.x[:,ix], tol[ix])
+                # steps = np.diff(mesh)
+                # self.boundary.steps[ix] = max(steps)
+                # self.boundary.steps[i] = max(np.diff(self.boundary.mesh[ix]))
+        
+        ## filter by points lying within two steps in each dimension + buffer
+        ################################################################
+        # m = np.array([zm.nm.isClose(self.x[i,0], x[0], tol=self.boundary.steps[0]*(1+buf)) for i in range(self.numPoints)])
+        meshLH = [None] * self.numIndVar
+        m = [None] * self.numIndVar
+        for ix in range(self.numIndVar):
+            i = self.closestIndex(self.boundary.mesh[ix], x[ix])
+            if self.boundary.mesh[ix][i] <= x[ix]:
+                ilow = i
+                if i < len(self.boundary.mesh[ix])-1:
+                    ihigh = i+1
+                else:
+                    ihigh = len(self.boundary.mesh[ix])-1
+            else:
+                ihigh = i
+                if i > 0:
+                    ilow = i-1
+                else:
+                    ilow = 0
+            meshLH[ix] = (ilow, ihigh)
+            if ilow > 0: ilow -= 1
+            if ihigh < len(self.boundary.mesh[ix])-1: ihigh += 1
+            m[ix] = (self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][ihigh] + self.boundary.tol[ix])
+        # m = np.array([ for i in range(self.numPoints)])
+        for ix in range(1, self.numIndVar):
+            # m = m & np.array([zm.nm.isClose(self.x[i,ix], x[ix], tol=self.boundary.steps[ix]*(1+buf)) for i in range(self.numPoints)])
+            m[0] = m[0] & m[ix]
+        X = self.x[m[0],:]
+        lm = X.shape[0]
+        if lm < self.numIndVar+1:
+            # print()
+            # print('filtering within two mesh steps returned nothing')
+            # print(x)
+            # zm.io.pause()
+            return False
+        
+        ## check if in an inner hole
+        ################################################################
+        inHole = True
+        m = [None] * self.numIndVar
+        for ix in range(self.numIndVar):
+            m[ix] = (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= X[:,ix]) & (X[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        for ix in range(self.numIndVar):
+            init = False
+            for i in range(self.numIndVar):
+                if i == ix: continue
+                if not init:
+                    init = True
+                    n = m[i]
+                else:
+                    n = n & m[i]
+            Xtemp = X[n,:]
+            Dtemp = Xtemp - x
+            ppos, neg = 0, 0
+            for val in Dtemp[:,ix]:
+                if val <= 0: neg += 1
+                if val >= 0: pos += 1
+            if pos < 2 or neg < 2: inHole = False
+        if inHole:
+            # print()
+            # print('Found hole')
+            # print(x)
+            # zm.io.pause()
+            return True
+        
+        ## filter to within one step
+        ################################################################
+        ix = 0
+        m = (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        for ix in range(1,self.numIndVar):
+            m = m & (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        X = self.x[m,:]
+        lm = X.shape[0]
+        if lm < self.numIndVar+1: return False
+        
+        ## sort points by normalized distance
+        ################################################################
+        #get max length used across each dimension
+        NL = np.array([max(self.x[:,i]) - min(self.x[:,i]) for i in range(self.numIndVar)])
+        #normalize database variables
+        nX = X / NL
+        # normalise input point
+        nx = x / NL
+        # compute normalized distances
+        D = nX - nx
+        Dmag = np.linalg.norm(D, axis=1)
+        # sort points by normalized distance
+        D = list(D)
+        D = [list(i) for i in D]
+        o = list(range(lm))
+        zm.nm.zSort(Dmag, o, verbose=False)
+        
+        ## find a combination of V+1 points (simplex) that incloses the datapoint
+        ################################################################
+        # find all possible unique simlices (V+1 points) in the filtered data X
+        oo = []
+        for I in nestedFor(*[range(i,lm) for i in range(self.numIndVar+1)]):
+            duplicate=False
+            for s in range(self.numIndVar):
+                for e in range(s+1, self.numIndVar+1):
+                    if I[s] >= I[e]: duplicate = True
+                    if duplicate: break
+                if duplicate: break
+            if duplicate: continue
+            #due to buffer in the step size, it's possible to have a simplex spanning 2 steps in one dimension, which will round corners and allow out of bound regions. Check for this and pass it by
+            so = [o[i] for i in I]
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            oo.append(so)
+        
+        for o in oo:
+            
+            v = [X[i,:] for i in o]
+            if self.inSimplex(x, *v): return True
+        return False
+    
+    def insideBounds(self, x, tol=None):
+        for ix in range(self.numIndVar):
+            if x[ix] < min(self.x[:,ix]): return False
+            if x[ix] > max(self.x[:,ix]): return False
+        ## initialize tolerable mesh
+        ################################################################
+        if self.boundary.need2Initialize:
+            self.boundary.need2Initialize = False
+            self.boundary.tol = tol[:]
+            self.boundary.mesh = [None] * self.numIndVar
+            size = [None] * self.numIndVar
+            for ix in range(self.numIndVar):
+                self.boundary.mesh[ix] = self.clusterdata(self.x[:,ix], tol[ix])
+        ## get nearest mesh indices in each direction
+        ################################################################
+        meshLH = [None] * self.numIndVar
+        m = [None] * self.numIndVar
+        for ix in range(self.numIndVar):
+            i = self.closestIndex(self.boundary.mesh[ix], x[ix])
+            if self.boundary.mesh[ix][i] <= x[ix]:
+                ilow = i
+                if i < len(self.boundary.mesh[ix])-1:
+                    ihigh = i+1
+                else:
+                    ihigh = len(self.boundary.mesh[ix])-1
+            elif self.boundary.mesh[ix][i] > x[ix]:
+                ihigh = i
+                if i > 0:
+                    ilow = i-1
+                else:
+                    ilow = 0
+            else:
+                if i > 0:
+                    ilow = i-1
+                else:
+                    ilow = 0
+                if i < len(self.boundary.mesh[ix]) - 1:
+                    ihigh = i + 1
+                else:
+                    ihigh = len(self.boundary.mesh[ix]) - 1
+            meshLH[ix] = (ilow, ihigh)
+        ## filter to datapoints of the nearest mesh in each dimension
+        ################################################################
+            m[ix] = (self.boundary.mesh[ix][ilow] - self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][ihigh] + self.boundary.tol[ix])
+        for ix in range(1, self.numIndVar):
+            m[0] = m[0] & m[ix]
+        X = self.x[m[0],:]
+        ## check if full grid of closest data
+        dx = X-x
+        cnt = np.zeros((self.numIndVar, 3), dtype=int)
+        for k in range(dx.shape[0]):
+            for ix in range(self.numIndVar):
+                if dx[k,ix] > 0.0:
+                    cnt[ix,0] += 1
+                elif dx[k,ix] < 0.0:
+                    cnt[ix,1] += 1
+                else:
+                    cnt[ix,1] += 1
+        flags = [False] * self.numIndVar
+        for ix in range(self.numIndVar):
+            if   all(cnt[ix,[0,1]] >= 2**(self.numIndVar-1)):
+                flags[ix] = True
+            elif all(cnt[ix,[0,2]] >= 2**(self.numIndVar-1)):
+                flags[ix] = True
+            elif all(cnt[ix,[1,2]] >= 2**(self.numIndVar-1)):
+                flags[ix] = True
+        if all(flags): return True
+        return False
+        
+        ## check if in an inner hole
+        ################################################################
+        inHole = True
+        m = [None] * self.numIndVar
+        for ix in range(self.numIndVar):
+            m[ix] = (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= X[:,ix]) & (X[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        for ix in range(self.numIndVar):
+            init = False
+            for i in range(self.numIndVar):
+                if i == ix: continue
+                if not init:
+                    init = True
+                    n = m[i]
+                else:
+                    n = n & m[i]
+            Xtemp = X[n,:]
+            Dtemp = Xtemp - x
+            ppos, neg = 0, 0
+            for val in Dtemp[:,ix]:
+                if val <= 0: neg += 1
+                if val >= 0: pos += 1
+            if pos < 2 or neg < 2: inHole = False
+        if inHole:
+            # print()
+            # print('Found hole')
+            # print(x)
+            # zm.io.pause()
+            return True
+        
+        ## filter to within one step
+        ################################################################
+        ix = 0
+        m = (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        for ix in range(1,self.numIndVar):
+            m = m & (self.boundary.mesh[ix][meshLH[ix][0]] - self.boundary.tol[ix] <= self.x[:,ix]) & (self.x[:,ix] <= self.boundary.mesh[ix][meshLH[ix][1]] + self.boundary.tol[ix])
+        X = self.x[m,:]
+        lm = X.shape[0]
+        if lm < self.numIndVar+1: return False
+        
+        ## sort points by normalized distance
+        ################################################################
+        #get max length used across each dimension
+        NL = np.array([max(self.x[:,i]) - min(self.x[:,i]) for i in range(self.numIndVar)])
+        #normalize database variables
+        nX = X / NL
+        # normalise input point
+        nx = x / NL
+        # compute normalized distances
+        D = nX - nx
+        Dmag = np.linalg.norm(D, axis=1)
+        # sort points by normalized distance
+        D = list(D)
+        D = [list(i) for i in D]
+        o = list(range(lm))
+        zm.nm.zSort(Dmag, o, verbose=False)
+        
+        ## find a combination of V+1 points (simplex) that incloses the datapoint
+        ################################################################
+        # find all possible unique simlices (V+1 points) in the filtered data X
+        oo = []
+        for I in nestedFor(*[range(i,lm) for i in range(self.numIndVar+1)]):
+            duplicate=False
+            for s in range(self.numIndVar):
+                for e in range(s+1, self.numIndVar+1):
+                    if I[s] >= I[e]: duplicate = True
+                    if duplicate: break
+                if duplicate: break
+            if duplicate: continue
+            #due to buffer in the step size, it's possible to have a simplex spanning 2 steps in one dimension, which will round corners and allow out of bound regions. Check for this and pass it by
+            so = [o[i] for i in I]
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            oo.append(so)
+        
+        for o in oo:
+            
+            v = [X[i,:] for i in o]
+            if self.inSimplex(x, *v): return True
+        return False
+    
+    @staticmethod
+    def inSimplex(p, *v):
+        D = len(p)
+        if len(v) != D+1: raise ValueError()
+        for i in v:
+            if len(i) != D: raise ValueError()
+        p = np.asarray(p)
+        V = list(v)
+        for i in range(D+1): V[i] = np.asarray(v[i])
+        T = np.array([V[i]-V[0] for i in range(1,D+1)]).T
+        try:
+            lbda = np.linalg.solve(T, p-V[0])
+        except np.linalg.LinAlgError:
+            return False
+        lbda = np.append(lbda, 1. - sum(lbda))
+        if sum(lbda) > 1.0: return False
+        for i in range(D+1):
+            if lbda[i] < 0.: return False
+        return True
+
+
+
+
+
+def isEven(a):
+    return a%2==0
+
+def isOdd(a):
+    return not isEven(a)
+
+def crossSymOdd_test(x, *y):
+    '''
+    checks if combinations satisfies odd cross symmetry between the x and the remaining inputs. Does not check for cross symmetry between the combinations of the later inputs.
+    '''
+    l = len(y)
+    ## allow offset term
+    if x == 0 and [i for i in y] == [0 for _ in range(l)]: return True
+    ## when x is 0, each remaing variable should be odd
+    if x == 0:
+        for z in y:
+            if z != 0 and isEven(z): return False
+    ## when each remaining variable is 0, x should be odd
+    if [i for i in y] == [0 for _ in range(l)]:
+        if isEven(x): return False
+    ## when both are not zero, their parity should not be the same
+    if x != 0:
+        for z in y:
+            if z != 0:
+                if isEven(x) == isEven(z): return False
+    return True
+
+def crossSymEven_test(x, *y):
+    l = len(y)
+    if x == 0:
+        for z in y:
+            if isOdd(z): return False
+    if [i for i in y] == [0 for _ in range(l)]:
+        if isOdd(x): return False
+    if x != 0:
+        for z in y:
+            if z != 0:
+                if isEven(x) != isEven(z): return False
+    return True
+
+def copy_func(f):
+    g = types.FunctionType(f.__code__, f.__globals__,
+            name = f.__name__, argdefs = f.__defaults__,
+            closure = f.__closure__)
+    g = functools.update_wrapper(g, f)
+    g.__kwdefaults__ = f.__kwdefaults__
+    return g
 
 class polyFit():
     
@@ -914,11 +1438,13 @@ class polyFit():
                 curve fitting process.
         '''
         
+        totalFitTImer = zm.io.Timer()
         ## check if number of inputs is one
         if len(args) == 1:
             self.c = c
             self.readPolyFitsFromFiles(args[0], verbose=verbose)
         else:
+            
             db, kw = args
             
             ## copy in database
@@ -939,12 +1465,15 @@ class polyFit():
             
             ## initialize the global Nvec
             self.Nvec    = [None] * self.db.numDepVar
+            self.stepwiseBounds = [None] * self.db.numDepVar
             
             ## initialize the global number of coefficients
             self.numCoef = np.array( [0]*self.db.numDepVar )
             
             ## initialize the global coefficient list
             self.coef    = [None] * self.db.numDepVar
+            self.active  = [None] * self.db.numDepVar
+            self.HCeqs   = [None] * self.db.numDepVar
             
             ## initialize other global goodness measurement variables
             self.Jtilde  = np.zeros( self.db.numDepVar, dtype=int )
@@ -987,6 +1516,7 @@ class polyFit():
             ## initialize a list of the auto fit dep var indices
             autoFits = [i for i in range(self.db.numDepVar) if self.auto[i]]
             
+            totalFitTimer.lap()
             ###################
             ## Perform the fits
             ###################
@@ -996,10 +1526,17 @@ class polyFit():
                 for dupFit in self.duplicateManFits:
                     if verbose: zm.io.text('Performing manual fit(s) for:', *['{}'.format(self.db.namesY[i]) for i in dupFit], c=self.c)
                     self.manFit(dupFit)
+                    totalFitTimer.lap()
+                    if verbose:
+                        zm.io.text('{} to perform manual fit(s) for:'.format(totalFitTimer.laps[-1]), *['{}'.format(self.db.namesY[i]) for i in dupFit], c=self.c)
+                        for i in dupFit: print(self.__printFit__(i))
                 ## peform the auto fits
                 for i in autoFits:
                     if verbose: zm.io.text('Performing auto fit for {}'.format(self.db.namesY[i]), c=self.c)
                     self.autoFit(i)
+                    if verbose:
+                        zm.io.text('{} to perform auto fit for {}'.format(totalFitTimer.laps[-1], self.db.namesY[i]), c=self.c)
+                        print(self.__printFit__(i))
             else: ## perfoming the fits simultanuously with multiprocessing
                 ## disable the multiprocessing option for all fits and verbosity
                 for i in range(self.db.numDepVar):
@@ -1024,6 +1561,11 @@ class polyFit():
         
         ## display the results
         if verbose: print(self)
+        if verbose:
+            if len(args) == 1:
+                zm.io.oneLineText('Took {} to load the fits'.format(totalFitTimer.stop()), c=self.c)
+            else:
+                zm.io.oneLineText('Total duration of all fits took {}'.format(totalFitTimer.stop()), c=self.c)
     
     ####################################################################
     ####################################################################
@@ -1068,28 +1610,50 @@ class polyFit():
         return self.__computeCHU__(n, cpus)
     
     def createA(self, args):
-        r, c, z, w, p = args
-        a = 0.
+        # r, c, z, w, p = args
+        # a = 0.
+        # nr = self.decompose_j(r, self.Nvec[z])
+        # nc = self.decompose_j(c, self.Nvec[z])
+        # n = [nr[i] + nc[i] for i in range(self.db.numIndVar)]
+        # for kk in range(self.db.numPoints):
+            # t = self.computeWeighting((kk, z, w, p))[-1]
+            # for v in range(self.db.numIndVar):
+                # for _ in range(n[v]): t *= self.db.x[kk,v]
+            # a += t
+        
+        ## alternate way
+        r, c, z, t = args
+        a = np.zeros((self.db.numPoints,1))
         nr = self.decompose_j(r, self.Nvec[z])
         nc = self.decompose_j(c, self.Nvec[z])
         n = [nr[i] + nc[i] for i in range(self.db.numIndVar)]
-        for kk in range(self.db.numPoints):
-            t = self.computeWeighting((kk, z, w, p))[-1]
-            for v in range(self.db.numIndVar):
-                for _ in range(n[v]): t *= self.db.x[kk,v]
-            a += t
-        return r, c, a
+        for v in range(self.db.numIndVar):
+            tt = np.copy(t)
+            for _ in range(n[v]): np.multiply(tt, self.db.x[:,v], out=tt)
+            a += tt
+        return r, c, sum(a)
     
     def createB(self, args):
-        r, iy, w, p = args
+        # r, iy, w, p = args
+        # b = np.zeros(len(iy))
+        # nr = self.decompose_j(r, self.Nvec[iy[0]])
+        # for ib,z in enumerate(iy):
+            # for kk in range(self.db.numPoints):
+                # t = self.computeWeighting((kk, z, w, p))[-1] * self.db.y[kk,z]
+                # for v in range(self.db.numIndVar):
+                    # for _ in range(nr[v]): t *= self.db.x[kk,v]
+                # b[ib] += t
+        # return r, b
+        
+        ## alternate way
+        r, iy, t = args
         b = np.zeros(len(iy))
         nr = self.decompose_j(r, self.Nvec[iy[0]])
-        for ib,z in enumerate(iy):
-            for kk in range(self.db.numPoints):
-                t = self.computeWeighting((kk, z, w, p))[-1] * self.db.y[kk,z]
-                for v in range(self.db.numIndVar):
-                    for _ in range(nr[v]): t *= self.db.x[kk,v]
-                b[ib] += t
+        for ib, z in enumerate(iy):
+            tt = np.multiply(t, self.db.y[:,z])
+            for v in range(self.db.numIndVar):
+                for _ in range(nr[v]): tt *= self.db.x[:v]
+            b[ib] = sum(tt)
         return r, b
     
     def manFit(self, iy):
@@ -1100,6 +1664,7 @@ class polyFit():
         
         ## unpack kw
         Nvec            = self.kw[z]['Nvec']
+        stepwiseBounds  = self.kw[z].get('stepwiseBounds', {})
         interaction     = self.kw[z].get('interaction', [])
         sym             = self.kw[z].get('sym', [False]*self.db.numIndVar)
         crossSymEven    = self.kw[z].get('crossSymEven', [])
@@ -1121,16 +1686,19 @@ class polyFit():
         self.numCoef[iy,] = J = self.calcNumCoef(Nvec)
         for i in iy: self.Nvec[i] = Nvec[:]
         
+        if len(Nvec) != self.db.numIndVar: raise ValueError("The length of the Nvec, {}, must be equal to the number of independent variables, {}.".format(len(Nvec), self.db.numIndVar))
+        
         ## create active list
         ########################################################################
         ## set active to empty list
         active = []
+        if verbose: prog = zm.io.oneLineProgress(J, msg='Determining Active Coefficients')
         ## loop through j values
         for j in range(J):
             ## calculate the n values
             n = self.decompose_j(j, Nvec)
-            ## check if n is a zero constraint then continue on to the next j
-            if tuple(n) in zeroConstraints: continue
+            if verbose: prog.display()
+            
             ## check if j is an allowed interaction term and if not then continue on to the next j
             
             ## set interaction flag to true
@@ -1141,6 +1709,9 @@ class polyFit():
                     interactionFlag = False
                     break
             if not interactionFlag: continue
+            
+            ## check if n is a zero constraint then continue on to the next j
+            if tuple(n) in zeroConstraints: continue
             
             ## initialize flag variable to false
             flag = False
@@ -1164,24 +1735,27 @@ class polyFit():
             if flag: continue
             ## loop through crossSymOdd constraints
             for val in crossSymOdd:
-                if flag: break
-                ## check if the n values from both variables given in val are even, then trip flag
-                if n[val[0]]%2 == 0 and n[val[1]]%2 == 0:
-                    if n[val[0]] == 0 and n[val[1]] == 0: continue  ## allow offset term
-                    flag = True
-                ## check if the n values from both variables given in val are odd, then trip flap
-                if n[val[0]]%2 == 1 and n[val[1]]%2 == 1:
-                    flag = True
+                # if flag: break
+                # ## check if the n values from both variables given in val are even, then trip flag
+                # if n[val[0]]%2 == 0 and n[val[1]]%2 == 0:
+                    # if n[val[0]] == 0 and n[val[1]] == 0: continue  ## allow offset term
+                    # flag = True
+                # ## check if the n values from both variables given in val are odd, then trip flap
+                # if n[val[0]]%2 == 1 and n[val[1]]%2 == 1:
+                    # flag = True
+                if not crossSymOdd_test(*[n[i] for i in val]): flag = True
             if flag: continue
             ## loop through crossSymEven constraints
             for val in crossSymEven:
-                if flag: break
-                ## check if the n values from both variables given in val are even and odd, then trip flag
-                if n[val[0]]%2 == 0 and n[val[1]]%2 == 1:
-                    flag = True
-                ## check if the n values from both variables given in val are odd and even, then trip flap
-                if n[val[0]]%2 == 1 and n[val[1]]%2 == 0:
-                    flag = True
+                # if flag: break
+                
+                # ## check if the n values from both variables given in val are even and odd, then trip flag
+                # if n[val[0]]%2 == 0 and n[val[1]]%2 == 1:
+                    # flag = True
+                # ## check if the n values from both variables given in val are odd and even, then trip flap
+                # if n[val[0]]%2 == 1 and n[val[1]]%2 == 0:
+                    # flag = True
+                if not crossSymEven_test(*[n[i] for i in val]): flag = True
             ## if flag hasn't been tripped, append j value onto the active list
             if not flag: active.append(j)
         lenActive = len(active)
@@ -1196,10 +1770,9 @@ class polyFit():
             A = np.zeros((lenActive,lenActive))
             b = np.zeros((lenActive, len(iy)))
             
-            ## set progress bar
-            if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions', c = self.c)
             
             if mp == 1:
+                if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions', c = self.c)
                 ## loop thru data points
                 for kk in range(k):
                     ## loop thru used polynomial coefficients
@@ -1208,6 +1781,7 @@ class polyFit():
                         if verbose: prog.display()
             else:
                 
+                if verbose: prog = zm.io.oneLineProgress(k, msg='Preparing Multiprocess', c=self.c)
                 it = [None]*(k*lenActive)
                 cnt = -1
                 ## loop thru data points
@@ -1216,13 +1790,16 @@ class polyFit():
                     for jj,j in enumerate(active):
                         cnt += 1
                         it[cnt] = (kk, jj, z, j)
+                    if verbose: prog.display()
                 
                 if mp == 0:
                     cpus = cpu_count()
                 else:
                     cpus = mp
                 
-                with Pool(processes=cpus, maxtasksperchild=1) as pool:
+                if verbose: prog = zm.io.oneLineProgress(k*lenActive, msg='PolyFit Setup: Computing the Basis Functions', c = self.c)
+                
+                with Pool(processes=cpus) as pool:
                     for vals in pool.imap_unordered(self.createX, it, chunksize=self.__computeCHU__(lenActive*k, cpus)):
                         kk, jj, val = vals
                         X[kk, jj] = val
@@ -1270,13 +1847,21 @@ class polyFit():
             A = np.zeros((lenActive,lenActive))
             b = np.zeros((lenActive,len(iy)))
             
+            t=np.ones(self.db.numPoints)
+            if collable(weighting):
+                for kk in range(self.db.numPoints):
+                    t[kk] = weighting(self.db, z, kk) ** 2.
+            if percent:
+                for kk in range(self.db.numPoints):
+                    t[kk] /= self.db.y[kk, z] ** 2
+            
             if mp == 1:
                 
                 for row in range(lenActive):
                     for col in range(lenActive):
-                        A[row,col] = self.createA((row,col,z,weighting,percent))[-1]
+                        A[row,col] = self.createA((row,col,z,t))[-1]
                         if verbose: prog.display()
-                    b[row,:] = self.createB(row,iy,weighting,percent)[-1]
+                    b[row,:] = self.createB(row,iy,t)[-1]
                     if verbose: prog.display()
                 
             else:
@@ -1291,8 +1876,8 @@ class polyFit():
                 for row in range(lenActive):
                     for col in range(lenActive):
                         i += 1
-                        itA[i] = (row, col, z, weighting, percent)
-                    itB[row] = (row, iy, weighting, percent)
+                        itA[i] = (row, col, z, t)
+                    itB[row] = (row, iy, t)
                 
                 with Pool(cpus) as pool:
                     for row, col, val in pool.imap_unordered(self.createA, itA, chunksize=self.__computeCHU__(lenActive**2, cpus)):
@@ -1326,17 +1911,37 @@ class polyFit():
         ## extract coefficinets
         for i in iy:
             self.coef[i] = a[:,i]
+            self.active[i] = active[:]
         
         #input the missing 0 coefficients into 'a' so that it can be used with the multidimensional_poly_func
         ########################################################################
-        for j in range(J):
-            if not j in active:
-                for i in iy:
-                    self.coef[i] = np.insert(self.coef[i],j,0.)
-                active = np.insert(active,j,0)
+        # prog
+        # for j in range(J):
+            # if not j in active:
+                # for i in iy:
+                    # self.coef[i] = np.insert(self.coef[i],j,0.)
+                # active = np.insert(active,j,0)
+            # prog
         
         for i in iy:
             self.coef[i] = list(self.coef[i])
+        
+        ## attempt to include hard coded equations
+        if verbose: zm.io.oneLineText('Creating efficient evaluation functions')
+        exec(self.writeHardCodedEqs(iy=iy, fName=True))
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         self.goodnessParams(mp, iy, verbose=verbose)
     
@@ -1423,15 +2028,27 @@ class polyFit():
         return p                    ## return the result
     
     def evaluate(self, z, x):
-        a = self.coef[z][:]
-        for v in range(len(self.Nvec[z])-1,0,-1):
-            k = self.Nvec[z][v] + 1
-            J = self.calcNumCoef(self.Nvec[z][:v+1])
-            for i in range(int(J/k)):
-                s = i * k
-                e = s + k
-                a[i] = self.evalPoly1D(a[s:e], x[v])
-        return self.evalPoly1D(a[:int(J/k)], x[0])
+        # a = self.coef[z][:]
+        # for v in range(len(self.Nvec[z])-1,0,-1):
+            # k = self.Nvec[z][v] + 1
+            # J = self.calcNumCoef(self.Nvec[z][:v+1])
+            # for i in range(int(J/k)):
+                # s = i * k
+                # e = s + k
+                # a[i] = self.evalPoly1D(a[s:e], x[v])
+        # return self.evalPoly1D(a[:int(J/k)], x[0])
+        
+        return dill.loads(self.HCeqs[z])(*x)
+        
+        # f = 0.
+        # lx = len(self.Nvec[z])
+        # for i,j in enumerate(self.active[z]):
+            # n = self.decompose_j(j, self.Nvec[z])
+            # prod = 1.
+            # for v in range(lx):
+                # for _ in range(n[v]): prod *= x[v]
+            # f += self.coef[z][i] * prod
+        # return f
     
     def evaluateOld(self, z, x):
         if type(x) not in (tuple, list, np.ndarray): x = [x]
@@ -1822,6 +2439,7 @@ class polyFit():
                 'Independent Variable Order': self.db.namesX,
                 'Nvec': self.Nvec[z],
                 'coefficients': self.coef[z],
+                'active': self.active[z],
                 'R2': self.R2[z],
                 'RMS': self.RMS[z],
                 'RMSN': self.RMSN[z],
@@ -1865,6 +2483,7 @@ class polyFit():
         self.Jtilde = []
         namesY = []
         self.numCoef = []
+        self.active = []
         
         if verbose: prog = zm.io.oneLineProgress(len(os.listdir()), msg='Reading in files', c = self.c)
         
@@ -1904,6 +2523,7 @@ class polyFit():
                 self.kw.append( data['settings'] )
                 self.Jtilde.append( data['DOF'] )
                 self.numCoef.append( self.calcNumCoef(data['Nvec']) )
+                self.active.append( data['active'] )
                 
                 namesY.append( fn[I+1:-5] )
                 
@@ -1913,11 +2533,15 @@ class polyFit():
         
         os.chdir(workingDir)
         
-        zm.nm.zSort(order, self.Nvec, self.coef, self.R2, self.RMS, self.RMSN, self.Syx, self.ybar, self.St, self.Sr, self.kw, self.Jtilde, namesY, self.numCoef, verbose=verbose)
+        zm.nm.zSort(order, self.Nvec, self.coef, self.active, self.R2, self.RMS, self.RMSN, self.Syx, self.ybar, self.St, self.Sr, self.kw, self.Jtilde, namesY, self.numCoef, verbose=verbose)
         
         self.db = database(x, y, name=base, namesX=namesX, namesY=namesY)
         
         self.auto = [False if 'Nvec' in self.kw[i] else True for i in range(self.db.numDepVar)]
+        
+        if verbose: zm.io.oneLineText('Creating efficient evaluation functions')
+        self.HCeqs = [None]*self.db.numDepVar
+        exec(self.writeHardCodedEqs(fname=True))
     
     
     def writeHardCodedEqs(self, **kws):
@@ -1925,6 +2549,8 @@ class polyFit():
         namesX = kws.get('namesX', self.db.namesX)
         namesY = kws.get('namesY', self.db.namesY)
         latex  = kws.get('latex' , False)
+        iy     = kws.get('iy', tuple(range(self.db.numDepVar)))
+        fName  = kws.get('fName', False)
         
         
         tab = ' '*4
@@ -1932,9 +2558,15 @@ class polyFit():
         
         s = ''
         
-        for i in range(self.db.numDepVar):
+        for i in iy:
             
-            s += nl*2 + 'def evaluate_' + namesY[i] + '('+('{}, '*self.db.numIndVar).format(*[v+'1' for v in namesX])+'):' + nl
+            if fName:
+                s += nl*2
+                # s += 'global f{}'.format(i) + nl
+                s += 'def f{}'.format(i) + '('+('{}, '*self.db.numIndVar).format(*[v+'1' for v in namesX])+'):' + nl
+            else:
+                s += nl*2 + 'def evaluate_' + namesY[i] + '('+('{}, '*self.db.numIndVar).format(*[v+'1' for v in namesX])+'):' + nl
+            
             
             
             # s += tab + ('{} = '*self.db.numIndVar).format(*[v+'0' for v in namesX]) + '1.0' + nl
@@ -1952,9 +2584,10 @@ class polyFit():
             
             D = {}
             
-            for j in range(self.numCoef[i]):
+            # for j in range(self.numCoef[i]):
+            for z,j in enumerate(self.active[i]):
                 
-                if self.coef[i][j] == 0.: continue
+                # if self.coef[i][j] == 0.: continue
                 
                 n = self.decompose_j(j, self.Nvec[i])
                 
@@ -2031,7 +2664,16 @@ class polyFit():
             s += ')'*self.db.numIndVar + nl
             
         
-        if not latex: return s
+        if not latex:
+            
+            if fName:
+                s += nl
+                for i in iy:
+                    s += 'self.HCeqs[{}] = dill.dumps(f{})\n'.format(i,i)
+                    s += 'del f{}\n'.format(i)
+                    
+            
+            return s
         
         ##############################################################
         ##############################################################
@@ -2084,6 +2726,22 @@ class polyFit():
             out[i] = s
         
         return out
+    
+    
+    @staticmethod
+    def stepwiseCOV(value, *B):
+        b = [0.] + list(B)
+        lB = len(b)
+        db = np.diff(b)
+        x = [value - i for i in b]
+        if x[0] > b[1]: x[0] = b[1]
+        for i in range(1,lB):
+            if x[i] < 0.:
+                x[i] = 0.
+            elif x[i] > db[i-1]:
+                x[i] = db[i-1]
+        if x[-1] < 0.: x[-1] = 0.
+        return x
     
     @staticmethod
     def reorderMultiPoly(A, z, Nvec, verbose=True):
@@ -2177,8 +2835,31 @@ class polyFit():
             Nnew = Nnew[:-1]
         return a, Nnew
     
+    @staticmethod
+    def poly1D_derivative(a, d=1):
+        if type(d) != int or d < 0: raise ValueError()
+        la = len(a)
+        if d >= la: return [0]
+        return [aa * prod(*list(range(i+1,i+1+d))) for i,aa in enumerate(a[d:])]
     
+    @staticmethod
+    def evalPoly1D_derivative(a, x, d=1):
+        return polyFit.evalPoly1D(polyFit.poly1D_derivative(a, d=d), x)
     
+
+# def prod(*x):
+    # lx = len(x)
+    # if lx > 1:
+        # p = x[0] * x[1]
+        # for i in x[2:]: p *= i
+        # return p
+    # elif lx == 0:
+        # return 1
+    # else:
+        # try:
+            # return prod(*tuple(x[0]))
+        # except:
+            # return x[0]
 
 
 def nestedFor(*iterables, enumerate=False):
@@ -2192,7 +2873,28 @@ def nestedFor(*iterables, enumerate=False):
         else:
             yield tuple([iterables[i][n[i]] for i in range(V)])
 
-
+def nestedForNoInteraction(*iterables, enumerate=False, defaults=None):
+    ## 'ABC' 'xy' '12' --> A00 B00 C00 0x0 0y0 001 002
+    V = len(iterables)
+    if defaults == None: defaults = [0.0]*V
+    cnt = -1
+    v = -1
+    for iterable in iterables:
+        v += 1
+        if enumerate:
+            for i in iterable:
+                if i == defaults[v]: continue
+                cnt += 1
+                yield cnt, tuple([defaults[j] if j != v else i for j in range(V)])
+        else:
+            for i in iterable:
+                if i == defaults[v]: continue
+                yield tuple([defaults[j] if j != v else i for j in range(V)])
+    if enumerate:
+        cnt += 1
+        yield cnt, tuple(defaults)
+    else:
+        yield tuple(defaults)
 
 
 
