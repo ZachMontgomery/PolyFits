@@ -680,6 +680,8 @@ class database():
                         else:
                             print('invalid entry, try again')
                     P.append(c)
+            else:
+                P = list(self.namesX)
             print()
             if numClusters == None:
                 nClusters = None
@@ -688,6 +690,7 @@ class database():
             else:
                 nClusters = [numClusters]*2
             C = [c for c in self.namesX if c not in P]
+            
             
             ii = [self.namesX.index(c) for c in C]
             Consts = [None]*self.numIndVar
@@ -748,7 +751,7 @@ class database():
                     if hasattr(i, 'get_zlim'):
                         i.set_zlim3d(zlim[j])
             
-            meshes = self.plotSnapshot(fig, ax, iy, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, tol=tol, avgLines=avgLines, makeScatter=makeScatter, numClusters=numClusters, **kwargsScatter)
+            meshes = self.plotSnapshot(fig, ax, iy, Consts, f=f, wireFrameColors=wireFrameColors, spa=spa, view=[ele, rot], thinning=thin, tol=tol, avgLines=avgLines, makeScatter=makeScatter, numClusters=nClusters, **kwargsScatter)
             
             if animate > 0:
                 # interval = 0.033
@@ -762,7 +765,7 @@ class database():
                 nFrames = len(azi)
                 def update(frame):
                     for a in ax:
-                        a.view_init(ele, axi[frame])
+                        a.view_init(ele, azi[frame])
                 ani = animation.FuncAnimation(fig=fig, func=update, frames=nFrames, interval=interval*1000)
                 ani.save(filename='exampleAnimation.gif', writer='pillow')
                 #ani.save(filename='exampleAnimation.html', writer='html')
